@@ -174,22 +174,24 @@ func (c *Conn)Handle(){
 			args, _ := data.GetList("args")
 			c.onEvent(event, args...)
 		case "term_oper":
-			rid, _ := data.GetInt("id")
+			rid, ok := data.GetInt("id")
 			tdata, _ := data.GetMap("data")
 			tid, _ := tdata.GetInt("term")
 			oper, _ := tdata.GetString("oper")
 			args, _ := tdata.GetList("args")
 			res, err := c.onTermOper(tid, oper, args)
-			if err != nil {
-				c.Reply(rid, Map{
-					"status": "error",
-					"error": err,
-				})
-			}else{
-				c.Reply(rid, Map{
-					"status": "ok",
-					"res": res,
-				})
+			if ok {
+				if err != nil {
+					c.Reply(rid, Map{
+						"status": "error",
+						"error": err,
+					})
+				}else{
+					c.Reply(rid, Map{
+						"status": "ok",
+						"res": res,
+					})
+				}
 			}
 		default:
 			loger.Debugf("[%s]: Unknown packet type %q", c.addr, typ)
@@ -263,6 +265,8 @@ func (c *Conn)Run(program string, args ...any)(term *Term, done <-chan bool, err
 		"data": Map{
 			"prog": program,
 			"args": args,
+			"width": term.width,
+			"height": term.height,
 		},
 	}); err != nil {
 		c.termMux.Lock()
@@ -307,9 +311,11 @@ func (c *Conn)onTermOper(tid int, oper string, args List)(res []any, err error){
 	if !ok {
 		return nil, &TermNotFoundErr{tid}
 	}
-	res, err = term.Oper(oper, args)
+	res, err = term.oper(oper, args)
 	if err == nil {
 		c.onEvent("#term.oper", tid, oper, args)
+	}else{
+		loger.Tracef("Error when doing term operation [%s]: %v", oper, err)
 	}
 	return
 }

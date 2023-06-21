@@ -52,6 +52,7 @@ func CodeToColor(c byte)(Color){
 	}
 }
 
+// Must be sync with <https://tweaked.cc/module/colors.html>
 var defaultPaletteColors = map[Color]int{
 	ColorWhite    : 0xF0F0F0,
 	ColorOrange   : 0xF2B233,
@@ -181,7 +182,7 @@ func (t *Term)clear(){
 	}
 }
 
-func (t *Term)Oper(oper string, args List)(res []any, err error){
+func (t *Term)oper(oper string, args List)(res []any, err error){
 	loger.Tracef("Oper term: %s %v", oper, args)
 	switch oper {
 	case "nativePaletteColour":
@@ -374,7 +375,7 @@ func (t *Term)Oper(oper string, args List)(res []any, err error){
 		if _, ok := defaultPaletteColors[c]; !ok {
 			return nil, &InvalidColorErr{c}
 		}
-		if len(args) < 2 {
+		if len(args) <= 2 {
 			rgb, ok := args.GetInt(1)
 			if !ok {
 				return nil, &ArgTypeErr{ 1, "int" }

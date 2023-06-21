@@ -367,7 +367,12 @@
 					hostList.replaceChildren(...children)
 				}
 				wsMessageListeners['device_join'] = () => { refreshDatas() }
-				wsMessageListeners['device_leave'] = () => { refreshDatas() }
+				wsMessageListeners['device_leave'] = (event) => {
+					if(event.host === selectingEle.host && event.conn === selectingEle.conn){
+						termData = null
+					}
+					refreshDatas()
+				}
 				var selectingEle = null
 				var selectingTerm = null
 				function createDeviceElement(tag, host, id){
@@ -385,7 +390,7 @@
 				const termNav = document.getElementById('term-nav')
 				const termBox = document.getElementById('term-box')
 				const termCursor = document.getElementById('term-cursor')
-				async function onClickDevice(ele, host, id){
+				function onClickDevice(ele, host, id){
 					if(selectingEle && selectingEle.host === host && selectingEle.conn === id){
 						return
 					}
@@ -400,9 +405,12 @@
 					selectingTerm = null
 					ele.classList.add('selected')
 					termBlock.style.display = 'block'
+					refreshTerms(host, id)
+				}
+				async function refreshTerms(host, conn){
 					const terms = await ws.ask('list_terms', {
 						host: host,
-						conn: id,
+						conn: conn,
 					})
 					if(terms.status !== 'ok') {
 						console.error('Cannot get term list:', terms.error)
@@ -414,7 +422,7 @@
 							let tid = t.id
 							let e = document.createElement('button')
 							e.innerText = t.title
-							e.addEventListener('click', () => { onClickTerm(e, host, id, tid) })
+							e.addEventListener('click', () => { onClickTerm(e, host, conn, tid) })
 							termEles.push(e)
 						}
 					}
@@ -458,6 +466,28 @@
 					}
 					termBox.replaceChildren(...termEles)
 					setTermCursorPos(termData.cursorX, termData.cursorY)
+				}
+				wsMessageListeners['term.open'] = (event) => {
+					if(selectingEle){
+						if(event.host === selectingEle.host && event.conn === selectingEle.conn){
+							refreshTerms(event.host, event.conn)
+						}
+					}
+				}
+				wsMessageListeners['term.close'] = (event) => {
+					if(termData){
+						if(event.host === termData.host && event.conn === termData.conn){
+							const args = event.args
+							if(args[0] === termData.term){
+								termData = null	
+							}
+						}
+					}
+					if(selectingEle){
+						if(event.host === selectingEle.host && event.conn === selectingEle.conn){
+							refreshTerms(event.host, event.conn)
+						}
+					}
 				}
 				wsMessageListeners['term.oper'] = (event) => {
 					event = event.data
@@ -616,6 +646,14 @@
 										charE.style.backgroundColor =
 											toHexColor(termData.palette[line.background[x] = termData.backgroundColor])
 									}
+									break
+								}
+								case 'setPaletteColour':
+								case 'setPaletteColor': {
+									let [color, r] = args[2]
+									console.debug('setPaletteColor:', ...args)
+									termData.palette[color] = r
+									redrawTerm(termData)
 									break
 								}
 								default:
