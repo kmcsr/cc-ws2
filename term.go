@@ -160,6 +160,9 @@ func NewTerm(width, height int, title string)(t *Term){
 }
 
 func (t *Term)clearLine(y int){
+	if y < 0 || y >= t.height {
+		return
+	}
 	l := t.lines[y]
 	for i := 0; i < t.width; i++ {
 		l.Text[i] = ' '
@@ -199,6 +202,13 @@ func (t *Term)Oper(oper string, args List)(res []any, err error){
 		if !ok {
 			return nil, &ArgTypeErr{ 0, "string" }
 		}
+		if t.cursorY < 0 || t.cursorY >= t.height || t.cursorX >= t.width {
+			return
+		}
+		if t.cursorX < 0 {
+			text = text[-t.cursorX:]
+			t.cursorX = 0
+		}
 		line := t.lines[t.cursorY]
 		l := copy(line.Text[t.cursorX:], text)
 		for i := 0; i < l; i++ {
@@ -206,7 +216,7 @@ func (t *Term)Oper(oper string, args List)(res []any, err error){
 			line.Background[t.cursorX + i] = t.backgroundColor
 		}
 		t.cursorX += l
-		return nil, nil
+		return
 	case "scroll":
 		offset, ok := args.GetInt(0)
 		if !ok {
@@ -246,16 +256,8 @@ func (t *Term)Oper(oper string, args List)(res []any, err error){
 		if !ok {
 			return nil, &ArgTypeErr{ 1, "int" }
 		}
-		if x <= 0 || x > t.width {
-			t.cursorX = 0
-		}else{
-			t.cursorX = x - 1
-		}
-		if y <= 0 || y > t.width {
-			t.cursorY = 0
-		}else{
-			t.cursorY = y - 1
-		}
+		t.cursorX = x - 1
+		t.cursorY = y - 1
 		return
 	case "getCursorBlink":
 		return []any{ t.cursorBlink }, nil
@@ -332,6 +334,15 @@ func (t *Term)Oper(oper string, args List)(res []any, err error){
 		ln := len(text)
 		if ln != len(color) || ln != len(bgColor) {
 			return nil, BlitLengthErr
+		}
+		if t.cursorY < 0 || t.cursorY >= t.height || t.cursorX >= t.width {
+			return
+		}
+		if t.cursorX < 0 {
+			text = text[-t.cursorX:]
+			color = color[-t.cursorX:]
+			bgColor = bgColor[-t.cursorX:]
+			t.cursorX = 0
 		}
 		line := t.lines[t.cursorY]
 		for i := 0; i < ln; i++ {

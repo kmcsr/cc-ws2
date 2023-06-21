@@ -102,7 +102,15 @@
 				s = '#' + '0'.repeat(6 - s.length) + s
 				return s
 			}
-			function toLuaKeyId(code){
+			function toCCMouseBtn(btn){
+				switch(btn){
+				case 0: return 1 // left button
+				case 1: return 3 // middle button
+				case 2: return 2 // right button
+				default: return null
+				}
+			}
+			function toCCKeyId(code){
 				if(!code){
 					return null
 				}
@@ -230,7 +238,7 @@
 								console.error('Error when handling message:', e)
 							}
 						}else{
-							console.log('un handled msg:', data)
+							// console.debug('not handled msg:', data)
 						}
 					}
 				})
@@ -414,9 +422,208 @@
 				}
 
 				var termData = null
+				function setTermCursorPos(x, y){
+					termData.cursorX = x
+					termData.cursorY = y
+
+					if(x < 0 || x >= termData.width ||
+						y < 0 || y >= termData.height ||
+						!termData.cursorBlink){
+						termCursor.style.display = 'none'
+						return
+					}
+					let e = termBox.children[y].children[x]
+					let parentRect = termBox.getBoundingClientRect()
+					let rect = e.getBoundingClientRect()
+					termCursor.style.display = 'block'
+					termCursor.style.color = toHexColor(termData.palette[termData.textColor])
+					termCursor.style.top = rect.y - parentRect.y + 'px'
+					termCursor.style.left = rect.x - parentRect.x + 'px'
+				}
+				function redrawTerm(termData){
+					var termEles = []
+					for(let y = 0; y < termData.height; y++){
+						const lineE = document.createElement('div')
+						termEles.push(lineE)
+						const line = termData.lines[y]
+						for(let x = 0; x < termData.width; x++){
+							const charE = document.createElement('span')
+							charE.innerText = line.text[x]
+							charE.style.color =
+								toHexColor(termData.palette[line.color[x]]) || toHexColor(termData.palette[termData.textColor])
+							charE.style.backgroundColor =
+								toHexColor(termData.palette[line.background[x]]) || toHexColor(termData.palette[termData.backgroundColor])
+							lineE.appendChild(charE)
+						}
+					}
+					termBox.replaceChildren(...termEles)
+					setTermCursorPos(termData.cursorX, termData.cursorY)
+				}
 				wsMessageListeners['term.oper'] = (event) => {
-					console.debug('term update:', event)
-					updateTerm()
+					event = event.data
+					if(termData){
+						if(event.host === termData.host && event.conn === termData.conn){
+							const args = event.args
+							if(args[0] === termData.term){
+								switch(args[1]){
+								case 'write': {
+									let [text] = args[2]
+									if(termData.cursorY < 0 || termData.cursorY >= termData.height || termData.cursorX >= termData.width){
+										return
+									}
+									if(termData.cursorX < 0){
+										text = text.substr(-termData.cursorX)
+										termData.cursorX = 0
+									}
+									const line = termData.lines[termData.cursorY]
+									const lineE = termBox.children[termData.cursorY]
+									let l = termData.width - termData.cursorX
+									if(text.length < l){
+										l = text.length
+									}else{
+										text = text.substr(0, l)
+									}
+									line.text = line.text.substring(0, termData.cursorX) + text + line.text.substr(termData.cursorX + l)
+									for(let i = 0; i < l; i++){
+										let j = termData.cursorX + i
+										const charE = lineE.children[j]
+										charE.innerText = text[i]
+										charE.style.color = toHexColor(termData.palette[line.color[j] = termData.textColor])
+										charE.style.backgroundColor =
+											toHexColor(termData.palette[line.background[j] = termData.backgroundColor])
+									}
+									setTermCursorPos(termData.cursorX + l, termData.cursorY)
+									break
+								}
+								case 'blit': {
+									let [text, color, bgColor] = args[2]
+									if(termData.cursorY < 0 || termData.cursorY >= termData.height || termData.cursorX >= termData.width){
+										return
+									}
+									if(termData.cursorX < 0){
+										text = text.substr(-termData.cursorX)
+										color = color.slice(-termData.cursorX)
+										bgColor = bgColor.slice(-termData.cursorX)
+										termData.cursorX = 0
+									}
+									const line = termData.lines[termData.cursorY]
+									const lineE = termBox.children[termData.cursorY]
+									let l = termData.width - termData.cursorX
+									if(text.length < l){
+										l = text.length
+									}else{
+										text = text.substr(0, l)
+									}
+									line.text = line.text.substring(0, termData.cursorX) + text + line.text.substr(termData.cursorX + l)
+									for(let i = 0; i < l; i++){
+										let j = termData.cursorX + i
+										const charE = lineE.children[j]
+										charE.innerText = text[i]
+										charE.style.color = toHexColor(termData.palette[line.color[j] = color[i]])
+										charE.style.backgroundColor =
+											toHexColor(termData.palette[line.background[j] = bgColor[i]])
+									}
+									setTermCursorPos(termData.cursorX + l, termData.cursorY)
+									break
+								}
+								case 'setCursorPos': {
+									let [x, y] = args[2]
+									setTermCursorPos(x - 1, y - 1)
+									break
+								}
+								case 'setCursorBlink': {
+									let [blink] = args[2]
+									termCursor.style.display =
+										(termData.cursorBlink = blink) ?'block' :'none'
+									break
+								}
+								case 'setTextColour':
+								case 'setTextColor': {
+									let [c] = args[2]
+									termData.textColor = c
+									break
+								}
+								case 'setBackgroundColour':
+								case 'setBackgroundColor': {
+									let [c] = args[2]
+									termData.backgroundColor = c
+									break
+								}
+								case 'scroll': {
+									let [offset] = args[2]
+									if(!offset){
+										break
+									}
+									let down = offset < 0
+									if(down){
+										offset = -offset
+									}
+									if(offset < termData.height){
+										const emptyLineE = document.createElement('div')
+										const emptyLine = {
+											text: ' '.repeat(termData.width),
+											color: new Array(termData.width).fill(termData.textColor),
+											background: new Array(termData.width).fill(termData.backgroundColor),
+										}
+										for(let x = 0; x < termData.width; x++){
+											const charE = document.createElement('span')
+											charE.innerText = ' '
+											charE.style.color = toHexColor(termData.palette[termData.textColor])
+											charE.style.backgroundColor = toHexColor(termData.palette[termData.backgroundColor])
+											emptyLineE.appendChild(charE)
+										}
+										if(down){
+											termData.lines.pop()
+											termData.lines.unshift(emptyLine)
+											termBox.removeChild(termBox.lastElementChild)
+											termBox.insertBefore(emptyLineE, termBox.firstElementChild)
+										}else{
+											termData.lines.shift()
+											termData.lines.push(emptyLine)
+											termBox.removeChild(termBox.firstElementChild)
+											termBox.appendChild(emptyLineE)
+										}
+										break
+									}
+								}
+								case 'clear': {
+									for(let y = 0; y < termData.height; y++){
+										const lineE = termBox.children[y]
+										const line = termData.lines[y]
+										line.text = ' '.repeat(termData.width)
+										for(let x = 0; x < termData.width; x++){
+											const charE = lineE.children[x]
+											charE.innerText = ' '
+											charE.style.color = toHexColor(termData.palette[line.color[x] = termData.textColor])
+											charE.style.backgroundColor =
+												toHexColor(termData.palette[line.background[x] = termData.backgroundColor])
+										}
+									}
+									break
+								}
+								case 'clearLine': {
+									let [y] = args[2]
+									if(y < 0 || y >= termData.height){
+										break
+									}
+									const lineE = termBox.children[y]
+									const line = termData.lines[y]
+									line.text = ' '.repeat(termData.width)
+									for(let x = 0; x < termData.width; x++){
+										const charE = lineE.children[x]
+										charE.innerText = ' '
+										charE.style.color = toHexColor(termData.palette[line.color[x] = termData.textColor])
+										charE.style.backgroundColor =
+											toHexColor(termData.palette[line.background[x] = termData.backgroundColor])
+									}
+									break
+								}
+								default:
+									// do nothing
+								}
+							}
+						}
+					}
 				}
 				function onClickTerm(ele, host, conn, tid){
 					if(!selectingTerm || selectingTerm.host !== host || selectingTerm.conn !== conn || selectingTerm.term !== tid){
@@ -450,55 +657,24 @@
 					termData.host = selectingTerm.host
 					termData.conn = selectingTerm.conn
 					termData.term = selectingTerm.term
-					console.debug('term data:', termData)
 
-					var termEles = []
-					for(let y = 0; y < termData.height; y++){
-						let lineE = document.createElement('div')
-						termEles.push(lineE)
-						let line = termData.lines[y]
-						for(let x = 0; x < termData.width; x++){
-							let charE = document.createElement('span')
-							charE.innerText = line.text.substr(x, 1)
-							charE.style.color =
-								toHexColor(termData.palette[line.color[x]]) || toHexColor(termData.palette[termData.textColor])
-							charE.style.backgroundColor =
-								toHexColor(termData.palette[line.background[x]]) || toHexColor(termData.palette[termData.backgroundColor])
-							lineE.appendChild(charE)
-						}
-					}
-					termBox.replaceChildren(...termEles)
-					setTermCursorPos(termData.cursorX, termData.cursorY)
+					redrawTerm(termData)
 					termBox.focus()
-				}
-				function setTermCursorPos(x, y){
-					termData.cursorX = x
-					termData.cursorY = y
-
-					let e = termBox.children[y].children[x]
-					let parentRect = termBox.getBoundingClientRect()
-					let rect = e.getBoundingClientRect()
-					termCursor.style.display = 'block'
-					termCursor.style.color = toHexColor(termData.palette[termData.textColor])
-					termCursor.style.top = rect.y - parentRect.y + 'px'
-					termCursor.style.left = rect.x - parentRect.x + 'px'
 				}
 				var focusingTerm = false
 				termBox.addEventListener('focus', () => {
 					focusingTerm = true
-					console.log('on focus')
 				})
 				termBox.addEventListener('blur', () => {
 					focusingTerm = false
-					console.log('on blur')
 				})
 				function onTermEvent(event){
 					if(!focusingTerm){
 						return
 					}
-					let keyCode = toLuaKeyId(event.code)
 					switch(event.type){
-					case 'keydown':
+					case 'keydown': {
+						let keyCode = toCCKeyId(event.code)
 						if(event.metaKey){
 							return
 						}
@@ -508,9 +684,41 @@
 							ws.fireTermEvent(termData.host, termData.conn, termData.term, 'char', event.key)
 						}
 						break
-					case 'keyup':
+					}
+					case 'keyup': {
+						let keyCode = toCCKeyId(event.code)
 						ws.fireTermEvent(termData.host, termData.conn, termData.term, 'key_up', keyCode)
 						break
+					}
+					case 'mousedown': {
+						let target = event.target
+						let x = Array.from(target.parentElement.children).indexOf(target) + 1
+						let y = Array.from(termBox.children).indexOf(target.parentElement) + 1
+						let btn = toCCMouseBtn(event.button)
+						if(btn !== null){
+							ws.fireTermEvent(termData.host, termData.conn, termData.term, 'mouse_click', btn, x, y)
+						}
+						break
+					}
+					case 'mouseup': {
+						let target = event.target
+						let x = Array.from(target.parentElement.children).indexOf(target) + 1
+						let y = Array.from(termBox.children).indexOf(target.parentElement) + 1
+						let btn = toCCMouseBtn(event.button)
+						if(btn !== null){
+							ws.fireTermEvent(termData.host, termData.conn, termData.term, 'mouse_click', btn, x, y)
+						}
+						break
+					}
+					case 'mousewheel': {
+						let target = event.target
+						let x = Array.from(target.parentElement.children).indexOf(target) + 1
+						let y = Array.from(termBox.children).indexOf(target.parentElement) + 1
+						if(event.deltaX){
+							ws.fireTermEvent(termData.host, termData.conn, termData.term, 'mouse_scroll', event.deltaX < 0 ?-1 :1, x, y)
+						}
+						break
+					}
 					default:
 						console.debug('on event:', event)
 					}
@@ -520,8 +728,35 @@
 				termBox.addEventListener('keyup', onTermEvent)
 				termBox.addEventListener('mousedown', onTermEvent)
 				termBox.addEventListener('mouseup', onTermEvent)
-				termBox.addEventListener('mouseclick', onTermEvent)
-				termBox.addEventListener('mousescroll', onTermEvent)
+				termBox.addEventListener('mousewheel', onTermEvent)
+				termCursor.addEventListener('mousedown', (event) => {
+					let x = termData.cursorX + 1, y = termData.cursorY + 1
+					let btn = toCCMouseBtn(event.button)
+					if(btn !== null){
+						ws.fireTermEvent(termData.host, termData.conn, termData.term, 'mouse_click', btn, x, y)
+					}
+					event.preventDefault()
+				})
+				termCursor.addEventListener('mouseup', (event) => {
+					let x = termData.cursorX + 1, y = termData.cursorY + 1
+					let btn = toCCMouseBtn(event.button)
+					if(btn !== null){
+						ws.fireTermEvent(termData.host, termData.conn, termData.term, 'mouse_up', btn, x, y)
+					}
+					event.preventDefault()
+				})
+				termCursor.addEventListener('mousewheel', (event) => {
+					let x = termData.cursorX + 1, y = termData.cursorY + 1
+					if(event.deltaX){
+						ws.fireTermEvent(termData.host, termData.conn, termData.term, 'mouse_scroll', event.deltaX < 0 ?-1 :1, x, y)
+					}
+					event.preventDefault()
+				})
+				document.addEventListener('contextmenu', (event) => {
+					if(focusingTerm){
+						event.preventDefault()
+					}
+				});
 			})
 		</script>
 	</head>
