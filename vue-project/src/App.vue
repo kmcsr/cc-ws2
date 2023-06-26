@@ -95,6 +95,10 @@ async function connectWs(token){
 			if(host){
 				const i = host.conns.findIndex((c) => c.id === data.conn)
 				if(i >= 0){
+					const conn = host.conns[i]
+					if(conn.ref){
+						conn.ref.onDeviceLeave()
+					}
 					host.conns.splice(i, 1)
 				}
 			}
@@ -122,7 +126,7 @@ async function connectWs(token){
 			break
 		}
 		default:
-			console.debug('not handled msg:', data)
+			// console.debug('not handled msg:', data)
 		}
 	})
 	ws.addEventListener('error', (event) => {
@@ -211,7 +215,13 @@ function switchDevice(hostid, deviceid){
 			<div v-if="selected">
 				<KeepAlive>
 					<Device :ref="(ref) => {
-							hosts.find((h) => h.id === selected.host).conns.find((c) => c.id === selected.device).ref = ref
+							const host = hosts.find((h) => h.id === selected.host)
+							if(host){
+								const conn = host.conns.find((c) => c.id === selected.device)
+								if(conn){
+									conn.ref = ref
+								}
+							}
 						}"
 						:hostid="selected.host" :connid="selected.device" :key="selected.encoded"
 						v-on:ask="onWsAsk"

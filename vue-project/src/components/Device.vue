@@ -47,6 +47,13 @@ function closeTerm(i){
 }
 
 //:export event
+function onDeviceLeave(){
+	terms.value.forEach((o) => {
+		o.running = false
+	})
+}
+
+//:export event
 function onTermOpen(data){
 	const [title, id] = data.args
 	terms.value.push({
@@ -91,6 +98,7 @@ function onTermOper(data){
 }
 
 defineExpose({
+	onDeviceLeave,
 	onTermOpen,
 	onTermClose,
 	onTermOper,
@@ -124,7 +132,7 @@ defineExpose({
 			<div v-if="selectedTermIndex !== null">
 				<KeepAlive>
 					<Terminal :ref="(ref) => { terms[selectedTermIndex].ref = ref }"
-						:hostid="hostid" :connid="connid" :termid="selectedTermId" :key="selectedTermId"
+						:hostid="hostid" :connid="connid" :termid="selectedTermId" :key="terms[selectedTermIndex]"
 						v-on:ask="(...args) => emit('ask', ...args)"
 						v-on:fire-event="(...args) => emit('fire-event', ...args)"
 					/>
@@ -170,6 +178,7 @@ defineExpose({
 	white-space: nowrap;
 	cursor: pointer;
 	user-select: none;
+	transition: all 0.5s ease;
 }
 
 .term-nav>button {
@@ -179,6 +188,10 @@ defineExpose({
 
 .term-nav>button.selected {
 	background: #000d;
+}
+
+.term-nav>button:hover {
+	transform: scale(1.1);
 }
 
 .term-nav-move,
@@ -205,8 +218,13 @@ defineExpose({
 	user-select: none;
 }
 
+.term-close-btn:hover {
+	color: red;
+}
+
 .term-new-btn {
 	float: right;
+	border-left: #eee 1px solid;
 }
 
 .term-box {
