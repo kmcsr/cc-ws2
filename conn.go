@@ -37,6 +37,7 @@ type Conn struct {
 	addr   string // as same as req.RemoteAddr
 	id     int
 	device string // The device's type, example are [turtle pocket computer]
+	label  string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -80,6 +81,7 @@ func AcceptConn(ctx context.Context, rw http.ResponseWriter, req *http.Request)(
 		fmt.Fprint(rw, err.Error())
 	}
 	c.device = req.Header.Get("X-CC-Device")
+	c.label = req.Header.Get("X-CC-Label")
 	return
 }
 
@@ -93,6 +95,10 @@ func (c *Conn)Id()(int){
 
 func (c *Conn)Device()(string){
 	return c.device
+}
+
+func (c *Conn)Label()(string){
+	return c.label
 }
 
 func (c *Conn)Context()(context.Context){

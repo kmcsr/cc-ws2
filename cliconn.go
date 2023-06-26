@@ -109,16 +109,27 @@ func (c *CliConn)Handle(){
 		case "list_hosts":
 			id, _ := data.GetInt("id")
 			nhosts := c.handler.GetHosts()
+			type connMeta struct {
+				Id     int    `json:"id"`
+				Addr   string `json:"addr"`
+				Device string `json:"device"`
+				Label  string `json:"label"`
+			}
 			type hostMeta struct {
-				Id string `json:"id"`
-				Conns []int `json:"conns"`
+				Id string        `json:"id"`
+				Conns []connMeta `json:"conns"`
 			}
 			hosts := make([]hostMeta, len(nhosts))
 			for i, h := range nhosts {
 				nconns := h.GetConns()
-				conns := make([]int, len(nconns))
+				conns := make([]connMeta, len(nconns))
 				for i, c := range nconns {
-					conns[i] = c.Id()
+					conns[i] = connMeta{
+						Id: c.Id(),
+						Addr: c.Addr(),
+						Device: c.Device(),
+						Label: c.Label(),
+					}
 				}
 				hosts[i] = hostMeta{
 					Id: h.Id(),
@@ -141,6 +152,7 @@ func (c *CliConn)Handle(){
 				Id     int    `json:"id"`
 				Addr   string `json:"addr"`
 				Device string `json:"device"`
+				Label  string `json:"label"`
 			}
 			var res struct {
 				Id string `json:"id"`
@@ -154,6 +166,7 @@ func (c *CliConn)Handle(){
 					Id: c.Id(),
 					Addr: c.Addr(),
 					Device: c.Device(),
+					Label: c.Label(),
 				}
 			}
 			c.Reply(id, Map{
@@ -230,6 +243,76 @@ func (c *CliConn)Handle(){
 					"lines": term.lines,
 				},
 			})
+		case "run":
+			id, _ := data.GetInt("id")
+			dt, _ := data.GetMap("data")
+			hostid, _ := dt.GetString("host")
+			connid, _ := dt.GetInt("conn")
+			program, _ := dt.GetString("prog")
+			args, _ := dt.GetList("args")
+			host := c.handler.GetHost(hostid)
+			if host == nil {
+				c.Reply(id, Map{
+					"status": "error",
+					"error": fmt.Sprintf("Host %q not found", hostid),
+				})
+				break
+			}
+			conn := host.GetConn(connid)
+			if conn == nil {
+				c.Reply(id, Map{
+					"status": "error",
+					"error": fmt.Sprintf("Conn %d not found", connid),
+				})
+				break
+			}
+			_, _, err := conn.Run(program, args...)
+			if err != nil {
+				c.Reply(id, Map{
+					"status": "failed",
+					"error": err.Error(),
+				})
+				break
+			}
+			c.Reply(id, Map{
+				"status": "ok",
+			})
+		case "exec":
+			id, _ := data.GetInt("id")
+			dt, _ := data.GetMap("data")
+			hostid, _ := dt.GetString("host")
+			connid, _ := dt.GetInt("conn")
+			codes, _ := dt.GetString("codes")
+			host := c.handler.GetHost(hostid)
+			if host == nil {
+				c.Reply(id, Map{
+					"status": "error",
+					"error": fmt.Sprintf("Host %q not found", hostid),
+				})
+				break
+			}
+			conn := host.GetConn(connid)
+			if conn == nil {
+				c.Reply(id, Map{
+					"status": "error",
+					"error": fmt.Sprintf("Conn %d not found", connid),
+				})
+				break
+			}
+			go func(){
+				res, err := conn.Exec(codes)
+				if err != nil {
+					c.Reply(id, Map{
+						"status": "failed",
+						"error": err.Error(),
+					})
+					return
+				}
+				c.Reply(id, Map{
+					"status": "ok",
+					"res": res,
+				})
+			}()
 		default:
 			loger.Debugf("[%s]: Unknown packet type %q", c.addr, typ)
 		}

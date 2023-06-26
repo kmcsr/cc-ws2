@@ -67,13 +67,23 @@ func (s *HostServer)AcceptConn(rw http.ResponseWriter, req *http.Request)(conn *
 }
 
 func (s *HostServer)GetConn(id int)(*Conn){
+	s.connMux.RLock()
+	defer s.connMux.RUnlock()
 	return s.conns[id]
 }
 
 func (s *HostServer)GetConns()(conns []*Conn){
+	s.connMux.RLock()
+	defer s.connMux.RUnlock()
 	conns = make([]*Conn, 0, len(s.conns))
 	for _, c := range s.conns {
 		conns = append(conns, c)
 	}
 	return
+}
+
+func (s *HostServer)GetConnCount()(n int){
+	s.connMux.RLock()
+	defer s.connMux.RUnlock()
+	return len(s.conns)
 }

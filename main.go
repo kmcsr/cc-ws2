@@ -81,6 +81,20 @@ func (h *Handler)GetHost(id string)(*HostServer){
 	return h.hosts[id]
 }
 
+func (h *Handler)getOrCreateHost(id string)(host *HostServer){
+	var ok bool
+	h.hostMux.RLock()
+	host, ok = h.hosts[id]
+	h.hostMux.RUnlock()
+	if !ok {
+		host = NewHostServer(h.ctx, id)
+		h.hostMux.Lock()
+		h.hosts[id] = host
+		h.hostMux.Unlock()
+	}
+	return
+}
+
 func (h *Handler)GetHosts()(hosts []*HostServer){
 	h.hostMux.RLock()
 	defer h.hostMux.RUnlock()
@@ -92,6 +106,13 @@ func (h *Handler)GetHosts()(hosts []*HostServer){
 }
 
 func (h *Handler)auth(authTk string)(bool){
+	if authTk == "test" {
+		return true
+	}
+	return false
+}
+
+func (h *Handler)authDaemon(authTk string, host string)(ok bool){
 	if authTk == "test" {
 		return true
 	}
@@ -141,17 +162,12 @@ func (h *Handler)serveWsd(rw http.ResponseWriter, req *http.Request){
 	)
 	authTk = req.Header.Get("X-CC-Auth")
 	remoteHost = req.Header.Get("X-CC-Host")
-	if !h.auth(authTk) {
+	if !h.authDaemon(authTk, remoteHost) {
 		rw.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprintf(rw, "401 Unauthorized")
 		return
 	}
-	host, ok := h.hosts[remoteHost]
-	if !ok {
-		rw.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprintf(rw, "Target host is not registered")
-		return
-	}
+	host := h.getOrCreateHost(remoteHost)
 
 	conn, err := host.AcceptConn(rw, req)
 	if err != nil {
@@ -164,13 +180,14 @@ func (h *Handler)serveWsd(rw http.ResponseWriter, req *http.Request){
 	h.BroadcastToClients("device_join", Map{
 		"host": host.Id(),
 		"conn": conn.Id(),
+		"addr": conn.Addr(),
 		"device": conn.Device(),
+		"label": conn.Label(),
 	})
 	defer func(){
 		h.BroadcastToClients("device_leave", Map{
 			"host": host.Id(),
 			"conn": conn.Id(),
-			"device": conn.Device(),
 		})
 	}()
 	conn.Handle()
@@ -210,8 +227,13 @@ func (h *Handler)serveWscli(rw http.ResponseWriter, req *http.Request){
 //go:embed index.html
 var mainHtml string
 
+var debugDist http.Handler = http.StripPrefix("/main", http.FileServer(http.Dir("./vue-project/dist")))
+
 func (h *Handler)ServeHTTP(rw http.ResponseWriter, req *http.Request){
 	path := req.URL.Path
+	if len(path) == 0 || path[0] != '/' {
+		path = "/" + path
+	}
 	if path == "/wsd" {
 		h.serveWsd(rw, req)
 		return
@@ -220,8 +242,9 @@ func (h *Handler)ServeHTTP(rw http.ResponseWriter, req *http.Request){
 		h.serveWscli(rw, req)
 		return
 	}
-	if path == "/main" {
-		http.ServeContent(rw, req, "main.html", startTime, strings.NewReader(mainHtml))
+	if path == "/main" || strings.HasPrefix(path, "/main/") {
+		// http.ServeContent(rw, req, "main.html", startTime, strings.NewReader(mainHtml))
+		debugDist.ServeHTTP(rw, req)
 		return
 	}
 	rw.WriteHeader(http.StatusNotFound)
@@ -230,7 +253,6 @@ func (h *Handler)ServeHTTP(rw http.ResponseWriter, req *http.Request){
 
 func main(){
 	handler := NewHandler()
-	handler.CreateHost("test_server")
 
 	server := &http.Server{
 		Addr: net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
