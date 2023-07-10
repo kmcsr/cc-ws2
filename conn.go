@@ -13,6 +13,8 @@ import (
 	"nhooyr.io/websocket/wsjson"
 )
 
+var emptyAnySlice = []any{}
+
 type ExecErr struct {
 	Msg string
 }
@@ -193,6 +195,9 @@ func (c *Conn)Handle(){
 						"error": err,
 					})
 				}else{
+					if res == nil {
+						res = emptyAnySlice
+					}
 					c.Reply(rid, Map{
 						"status": "ok",
 						"res": res,

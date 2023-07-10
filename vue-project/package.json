@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build_watch": "vite build --mode development --debug true --watch true --clearScreen false",
+    "build_dev": "vite build --mode development --debug true --watch true --clearScreen false",
     "preview": "vite preview"
   },
   "dependencies": {

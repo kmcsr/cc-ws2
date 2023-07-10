@@ -40,10 +40,37 @@ function switchTerm(i){
 }
 
 function closeTerm(i){
+	const termid = terms.value[i].id
 	terms.value.splice(i, 1)
 	if(selectedTermIndex.value >= i && --selectedTermIndex.value < 0){
 		selectedTermIndex.value = terms.value.length > 0 ?0 :null
 	}
+	emit('fire-event', props.hostid, props.connid, termid, 'terminate')
+}
+
+async function onNewTerm(){
+	var program = prompt('Program:')
+	if(!program){
+		return
+	}
+	var arg = prompt('Arg:')
+	if(arg === null){
+		return
+	}
+	const res = await askWs('run', {
+		host: props.hostid,
+		conn: props.connid,
+		prog: program,
+		args: [arg],
+	})
+	if(res.status !== 'ok'){
+		console.error('Cannot start new program:', res)
+		alert('Err: ' + res.error)
+		return
+	}
+	console.debug('Successed to start program:', res)
+	selectedTermIndex.value = null
+	return
 }
 
 //:export event
@@ -71,7 +98,7 @@ function onTermClose(data){
 	const [id, successed] = data.args
 	// const index = terms.value.findIndex((e) => e.running && e.id === id)
 	const term = terms.value.find((e) => e.running && e.id === id)
-	if(index >= 0){
+	if(term){
 		term.running = false
 		if(term.ref){
 			term.ref.onTermClose(data)
@@ -124,14 +151,19 @@ defineExpose({
 						title="Close this terminal">X</button>
 				</button>
 			</TransitionGroup>
-			<button class="term-new-btn">
+			<button class="term-new-btn" @click="onNewTerm">
 				<b>New +</b>
 			</button>
 		</nav>
 		<div class="term-box">
 			<div v-if="selectedTermIndex !== null">
 				<KeepAlive>
-					<Terminal :ref="(ref) => { terms[selectedTermIndex].ref = ref }"
+					<Terminal :ref="(ref) => {
+							const term = terms[selectedTermIndex]
+							if(term){
+								term.ref = ref
+							}
+						}"
 						:hostid="hostid" :connid="connid" :termid="selectedTermId" :key="terms[selectedTermIndex]"
 						v-on:ask="(...args) => emit('ask', ...args)"
 						v-on:fire-event="(...args) => emit('fire-event', ...args)"

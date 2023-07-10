@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 
 	"nhooyr.io/websocket"
@@ -13,6 +14,7 @@ import (
 )
 
 type HandlerI interface {
+	API
 	Context()(context.Context)
 	GetHost(id string)(*HostServer)
 	GetHosts()([]*HostServer)
@@ -20,6 +22,7 @@ type HandlerI interface {
 
 // This connection is only used when outside of CC
 type CliConn struct {
+	token  string
 	req    *http.Request
 	ws     *websocket.Conn
 	addr   string
@@ -34,9 +37,10 @@ type CliConn struct {
 	asking map[int]chan<- any
 }
 
-func AcceptCliConn(handler HandlerI, rw http.ResponseWriter, req *http.Request)(c *CliConn, err error){
+func AcceptCliConn(handler HandlerI, token string, rw http.ResponseWriter, req *http.Request)(c *CliConn, err error){
 	c = &CliConn{
 		handler: handler,
+		token: token,
 		addr: req.RemoteAddr,
 		asking: make(map[int]chan<- any),
 	}
@@ -75,6 +79,24 @@ func (c *CliConn)Close()(err error){
 	return
 }
 
+func (c *CliConn)checkAndGetHost(rid int, hostid string)(host *HostServer){
+	if !c.handler.CheckPerm(c.token, hostid) {
+		c.Reply(rid, Map{
+			"status": "error",
+			"error": fmt.Sprintf("Host %q not found or permission denied", hostid),
+		})
+		return
+	}
+	if host = c.handler.GetHost(hostid); host == nil {
+		c.Reply(rid, Map{
+			"status": "error",
+			"error": fmt.Sprintf("Host %q not found", hostid),
+		})
+		return
+	}
+	return
+}
+
 func (c *CliConn)Handle(){
 	defer c.ws.Close(websocket.StatusInternalError, "500 internal error")
 	for {
@@ -101,6 +123,9 @@ func (c *CliConn)Handle(){
 			tid, _ := data.GetInt("term")
 			event, _ := data.GetString("event")
 			args, _ := data.GetList("args")
+			if !c.handler.CheckPerm(c.token, hid) {
+				break
+			}
 			if host := c.handler.GetHost(hid); host != nil {
 				if conn := host.GetConn(cid); conn != nil {
 					conn.FireEventOnTerm(tid, event, args)
@@ -119,33 +144,50 @@ func (c *CliConn)Handle(){
 				Id string        `json:"id"`
 				Conns []connMeta `json:"conns"`
 			}
-			hosts := make([]hostMeta, len(nhosts))
-			for i, h := range nhosts {
-				nconns := h.GetConns()
-				conns := make([]connMeta, len(nconns))
-				for i, c := range nconns {
-					conns[i] = connMeta{
-						Id: c.Id(),
-						Addr: c.Addr(),
-						Device: c.Device(),
-						Label: c.Label(),
+			permhosts, err := c.handler.ListServers(c.token)
+			if err != nil {
+				c.Reply(id, Map{
+					"status": "error",
+					"error": err.Error(),
+				})
+				break
+			}
+			sort.Slice(nhosts, func(i, j int)(bool){ return nhosts[i].Id() < nhosts[j].Id() })
+			hosts := make([]hostMeta, len(permhosts))
+			for i, hid := range permhosts {
+				j := sort.Search(len(nhosts), func(i int)(bool){ return nhosts[i].Id() >= hid })
+				if j < len(nhosts) && nhosts[j].Id() == hid {
+					h := nhosts[j]
+					nconns := h.GetConns()
+					conns := make([]connMeta, len(nconns))
+					for i, c := range nconns {
+						conns[i] = connMeta{
+							Id: c.Id(),
+							Addr: c.Addr(),
+							Device: c.Device(),
+							Label: c.Label(),
+						}
+					}
+					hosts[i] = hostMeta{
+						Id: hid,
+						Conns: conns,
+					}
+				}else{
+					hosts[i] = hostMeta{
+						Id: hid,
+						Conns: nil,
 					}
 				}
-				hosts[i] = hostMeta{
-					Id: h.Id(),
-					Conns: conns,
-				}
 			}
-			c.Reply(id, hosts)
+			c.Reply(id, Map{
+				"status": "ok",
+				"data": hosts,
+			})
 		case "get_host":
 			id, _ := data.GetInt("id")
 			hostid, _ := data.GetString("data")
-			host := c.handler.GetHost(hostid)
+			host := c.checkAndGetHost(id, hostid)
 			if host == nil {
-				c.Reply(id, Map{
-					"status": "error",
-					"error": fmt.Sprintf("Host %q not found", hostid),
-				})
 				break
 			}
 			type connMeta struct {
@@ -178,12 +220,8 @@ func (c *CliConn)Handle(){
 			dt, _ := data.GetMap("data")
 			hostid, _ := dt.GetString("host")
 			connid, _ := dt.GetInt("conn")
-			host := c.handler.GetHost(hostid)
+			host := c.checkAndGetHost(id, hostid)
 			if host == nil {
-				c.Reply(id, Map{
-					"status": "error",
-					"error": fmt.Sprintf("Host %q not found", hostid),
-				})
 				break
 			}
 			conn := host.GetConn(connid)
@@ -204,12 +242,8 @@ func (c *CliConn)Handle(){
 			hostid, _ := dt.GetString("host")
 			connid, _ := dt.GetInt("conn")
 			termid, _ := dt.GetInt("term")
-			host := c.handler.GetHost(hostid)
+			host := c.checkAndGetHost(id, hostid)
 			if host == nil {
-				c.Reply(id, Map{
-					"status": "error",
-					"error": fmt.Sprintf("Host %q not found", hostid),
-				})
 				break
 			}
 			conn := host.GetConn(connid)
@@ -250,12 +284,8 @@ func (c *CliConn)Handle(){
 			connid, _ := dt.GetInt("conn")
 			program, _ := dt.GetString("prog")
 			args, _ := dt.GetList("args")
-			host := c.handler.GetHost(hostid)
+			host := c.checkAndGetHost(id, hostid)
 			if host == nil {
-				c.Reply(id, Map{
-					"status": "error",
-					"error": fmt.Sprintf("Host %q not found", hostid),
-				})
 				break
 			}
 			conn := host.GetConn(connid)
@@ -283,12 +313,8 @@ func (c *CliConn)Handle(){
 			hostid, _ := dt.GetString("host")
 			connid, _ := dt.GetInt("conn")
 			codes, _ := dt.GetString("codes")
-			host := c.handler.GetHost(hostid)
+			host := c.checkAndGetHost(id, hostid)
 			if host == nil {
-				c.Reply(id, Map{
-					"status": "error",
-					"error": fmt.Sprintf("Host %q not found", hostid),
-				})
 				break
 			}
 			conn := host.GetConn(connid)

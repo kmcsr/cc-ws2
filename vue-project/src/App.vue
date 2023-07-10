@@ -106,21 +106,21 @@ async function connectWs(token){
 		}
 		case 'term.open': {
 			const obj = _getConnObj(data)
-			if(obj){
+			if(obj && obj.ref){
 				obj.ref.onTermOpen(data)
 			}
 			break
 		}
 		case 'term.close': {
 			const obj = _getConnObj(data)
-			if(obj){
+			if(obj && obj.ref){
 				obj.ref.onTermClose(data)
 			}
 			break
 		}
 		case 'term.oper': {
 			const obj = _getConnObj(data)
-			if(obj){
+			if(obj && obj.ref){
 				obj.ref.onTermOper(data)
 			}
 			break
@@ -167,9 +167,15 @@ async function reauth(){
 			console.log('Connect success!')
 		}catch(e){
 			console.error('Cannot connect websocket:', e)
+			alert('Cannot connect to the websocket point')
 			return
 		}
-		hosts.value = (await wsconn.ask('list_hosts')) || []
+		const res = await wsconn.ask('list_hosts')
+		if(res.status !== 'ok'){
+			console.error('Cannot get hosts:', res)
+		}else{
+			hosts.value = res.data || []
+		}
 	}
 }
 
