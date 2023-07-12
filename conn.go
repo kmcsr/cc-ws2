@@ -247,7 +247,11 @@ func (c *Conn)Ask(typ string, data any)(res any, err error){
 	}); err != nil {
 		return
 	}
-	res = <-resCh
+	select {
+	case res = <-resCh:
+	case <-c.ctx.Done():
+		err = c.ctx.Err()
+	}
 	return
 }
 
@@ -289,9 +293,16 @@ func (c *Conn)Run(program string, args ...any)(term *Term, done <-chan bool, err
 	doneCh := make(chan bool, 1)
 	done = doneCh
 	go func(){
-		v, _ := (<-resCh).(bool)
-		doneCh <- v
-		c.onEvent("#term.close", id, v)
+		var bv bool
+		select {
+		case v := <-resCh:
+			bv, _ = v.(bool)
+			doneCh <- bv
+		case <-c.ctx.Done():
+			close(doneCh)
+			return
+		}
+		c.onEvent("#term.close", id, bv)
 		c.termMux.Lock()
 		delete(c.terms, id)
 		c.termMux.Unlock()

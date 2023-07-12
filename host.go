@@ -32,6 +32,16 @@ func (s *HostServer)Id()(string){
 	return s.id
 }
 
+func (s *HostServer)Destroy(){
+	s.cancel()
+	s.connMux.Lock()
+	for _, c := range s.conns {
+		c.Close()
+	}
+	s.conns = nil
+	s.connMux.Unlock()
+}
+
 func (s *HostServer)AcceptConn(rw http.ResponseWriter, req *http.Request)(conn *Conn, err error){
 	var ccId int
 	if ccId, err = readCCID(req); err != nil {

@@ -1,6 +1,11 @@
 
 package main
 
+import (
+	"encoding/json"
+	"net/http"
+)
+
 type Map map[string]any
 
 func (m Map)Get(k string)(any){
@@ -123,3 +128,14 @@ func inRange(n, max int)(int){
 	}
 	return n
 }
+
+func writeJson(rw http.ResponseWriter, code int, data any)(err error){
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(code)
+	return json.NewEncoder(rw).Encode(data)
+}
+
+func readJsonBody(req *http.Request, ptr any)(err error){
+	return json.NewDecoder(req.Body).Decode(ptr)
+}
+

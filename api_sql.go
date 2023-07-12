@@ -91,24 +91,12 @@ func (v *MySQLAPI)QueryContext(ctx context.Context, cmd string, args ...any)(row
 	}
 }
 
-func (v *MySQLAPI)NewCliToken(rtToken string, expiration *time.Time)(token string, err error){
-	const queryCmd = "SELECT `root` FROM tokens" +
-		" WHERE (`expiration` IS NULL OR CONVERT_TZ(`expiration`,@@session.time_zone,'+00:00')>=NOW())" +
-		" AND `token`=?"
+func (v *MySQLAPI)NewCliToken(expiration *time.Time)(token string, err error){
 	const insertCmd = "INSERT INTO tokens (`token`, `expiration`)" +
 		" VALUES (?, ?)"
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
 	defer cancel()
-
-	var root bool
-	if err = v.DB.QueryRowContext(ctx, queryCmd, rtToken).Scan(&root); err != nil {
-		return
-	}
-	if !root {
-		err = PermDeniedErr
-		return
-	}
 
 	if token, err = generateToken(); err != nil {
 		return
@@ -132,15 +120,165 @@ func (v *MySQLAPI)NewCliToken(rtToken string, expiration *time.Time)(token strin
 	return
 }
 
+func (v *MySQLAPI)NewDaemonToken(server string, expiration *time.Time)(token string, err error){
+	const insertCmd = "INSERT INTO daemon_tokens (`token`, `server`, `expiration`)" +
+		" VALUES (?, ?, ?)"
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	if token, err = generateToken(); err != nil {
+		return
+	}
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, insertCmd, token, server, expiration); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		return
+	}
+
+	token = daemonTokenPrefix + token
+	return
+}
+
+func (v *MySQLAPI)RemoveCliToken(token string)(err error){
+	const deleteCmd = "DELETE FROM tokens" +
+		" WHERE `token`=?"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		return TokenNotExistsErr
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, deleteCmd, token); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)RemoveDaemonToken(token string)(err error){
+	const deleteCmd = "DELETE FROM daemon_tokens" +
+		" WHERE `token`=?"
+
+	if len(token) != daemonTokenLen || token[:len(daemonTokenPrefix)] != daemonTokenPrefix {
+		return TokenNotExistsErr
+	}
+	token = token[len(daemonTokenPrefix):]
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, deleteCmd, token); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)ListTokens()(tokens []Token, err error){
+	const queryCmd = "SELECT `token`,`root`," +
+		"CONVERT_TZ(`expiration`,@@session.time_zone,'+00:00')" +
+		" FROM tokens"
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	var rows *sql.Rows
+	if rows, err = v.QueryContext(ctx, queryCmd); err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			tk Token
+			expiration sql.NullTime
+		)
+		if err = rows.Scan(&tk.Token, &tk.Root, &expiration); err != nil {
+			return
+		}
+		tk.Token = cliTokenPrefix + tk.Token
+		if expiration.Valid {
+			tk.Expiration = &expiration.Time
+		}
+		tokens = append(tokens, tk)
+	}
+	if err = rows.Err(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)ListDaemonTokens()(tokens []DaemonToken, err error){
+	const queryCmd = "SELECT `token`,`server`," +
+		"CONVERT_TZ(`expiration`,@@session.time_zone,'+00:00')" +
+		" FROM daemon_tokens"
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	var rows *sql.Rows
+	if rows, err = v.QueryContext(ctx, queryCmd); err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			tk DaemonToken
+			expiration sql.NullTime
+		)
+		if err = rows.Scan(&tk.Token, &tk.Server, &expiration); err != nil {
+			return
+		}
+		tk.Token = daemonTokenPrefix + tk.Token
+		if expiration.Valid {
+			tk.Expiration = &expiration.Time
+		}
+		tokens = append(tokens, tk)
+	}
+	if err = rows.Err(); err != nil {
+		return
+	}
+	return
+}
+
 func (v *MySQLAPI)AuthCli(token string)(ok bool){
 	const queryCmd = "SELECT 1 FROM tokens" +
 		" WHERE (`expiration` IS NULL OR CONVERT_TZ(`expiration`,@@session.time_zone,'+00:00')>=NOW())" +
 		" AND `token`=?"
 
-	if len(token) != cliTokenLen || token[:len(cliTokenPrefix)] != cliTokenPrefix {
-		return false
+	if token, ok = preProcessCliToken(token); !ok {
+		return
 	}
-	token = token[len(cliTokenPrefix):]
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
 	defer cancel()
@@ -170,15 +308,132 @@ func (v *MySQLAPI)AuthDaemon(token string, server string)(ok bool){
 	return
 }
 
-func (v *MySQLAPI)ListServers(token string)(servers []string, err error){
-	const queryCmd = "SELECT `server` FROM token_ops" +
-		" WHERE `token`=?"
+func (v *MySQLAPI)CheckRootToken(rtToken string)(ok bool){
+	const queryCmd = "SELECT `root` FROM tokens" +
+		" WHERE (`expiration` IS NULL OR CONVERT_TZ(`expiration`,@@session.time_zone,'+00:00')>=NOW())" +
+		" AND `token`=?"
+
+	if rtToken, ok = preProcessCliToken(rtToken); !ok {
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
 	defer cancel()
 
+	if err := v.DB.QueryRowContext(ctx, queryCmd, rtToken).Scan(&ok); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)SetRoot(token string, value bool)(err error){
+	const updateCmd = "UPDATE tokens SET" +
+		" `root`=?" +
+		" WHERE `token`=?"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		err = TokenNotExistsErr
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, updateCmd, value, token); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)CreateServer(id string)(err error){
+	const insertCmd = "INSERT INTO servers (`id`)" +
+		" VALUES (?)"
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, insertCmd, id); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)RemoveServer(id string)(err error){
+	const deleteCmd = "DELETE FROM servers" +
+		" WHERE `id`=?"
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, deleteCmd, id); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)ListServers(token string)(servers []string, err error){
+	const query1Cmd = "SELECT `root` FROM tokens" +
+		" WHERE (`expiration` IS NULL OR CONVERT_TZ(`expiration`,@@session.time_zone,'+00:00')>=NOW())" +
+		" AND `token`=?"
+	const query2Cmd = "SELECT `id` FROM servers"
+	const query3Cmd = "SELECT `server` FROM token_ops" +
+		" WHERE `token`=?"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		err = PermDeniedErr
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	var root bool
+	if err = v.DB.QueryRowContext(ctx, query1Cmd, token).Scan(&root); err != nil {
+		return
+	}
+	var args []any
+	var queryCmd2 string
+	if root {
+		queryCmd2 = query2Cmd
+	}else{
+		queryCmd2 = query3Cmd
+		args = []any{token}
+	}
+
 	var rows *sql.Rows
-	if rows, err = v.QueryContext(ctx, queryCmd, token); err != nil {
+	if rows, err = v.QueryContext(ctx, queryCmd2, args...); err != nil {
 		return
 	}
 	defer rows.Close()
@@ -202,6 +457,10 @@ func (v *MySQLAPI)CheckPerm(token string, server string)(ok bool){
 	const query2Cmd = "SELECT 1 FROM token_ops" +
 		" WHERE `token`=? AND `server`=?"
 
+	if token, ok = preProcessCliToken(token); !ok {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
 	defer cancel()
 
@@ -214,6 +473,43 @@ func (v *MySQLAPI)CheckPerm(token string, server string)(ok bool){
 	}
 
 	if err := v.DB.QueryRowContext(ctx, query2Cmd, token, server).Scan(&ok); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)SetPerm(token string, server string, value bool)(err error){
+	const insertCmd = "INSERT IGNORE INTO token_ops (`token`, `server`)" +
+		" VALUES (?, ?)"
+	const deleteCmd = "DELETE FROM token_ops" +
+		" WHERE `token`=? AND `server`=?"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		err = TokenNotExistsErr
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	var cmd string
+	if value {
+		cmd = insertCmd
+	}else{
+		cmd = deleteCmd
+	}
+	if _, err = execTx(tx, cmd, token, server); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		return
 	}
 	return

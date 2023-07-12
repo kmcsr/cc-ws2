@@ -36,9 +36,7 @@ func NewHandler(api API)(h *Handler){
 func (h *Handler)NewServeMux()(mux *http.ServeMux){
 	mux = http.NewServeMux()
 	mux.Handle("/main/", webAssetsHandler)
-
-	// mux.HandleFunc("/api/create", nil)
-
+	mux.Handle("/api/", http.StripPrefix("/api", h.newApiMux()))
 	mux.HandleFunc("/wscli", h.serveWscli)
 	mux.HandleFunc("/wsd", h.serveWsd)
 	mux.HandleFunc("/", func(rw http.ResponseWriter, req *http.Request){
@@ -79,6 +77,18 @@ func (h *Handler)getOrCreateHost(id string)(host *HostServer){
 		h.hostMux.Unlock()
 	}
 	return
+}
+
+func (h *Handler)removeHost(id string){
+	h.hostMux.Lock()
+	host, ok := h.hosts[id]
+	if ok {
+		delete(h.hosts, id)
+	}
+	h.hostMux.Unlock()
+	if ok {
+		host.Destroy()
+	}
 }
 
 func (h *Handler)GetHosts()(hosts []*HostServer){

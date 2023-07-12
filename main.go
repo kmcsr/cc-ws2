@@ -55,7 +55,7 @@ func main(){
 
 	server := &http.Server{
 		Addr: net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
-		Handler: handler.NewServeMux(),
+		Handler: logMiddleWare(handler.NewServeMux()),
 	}
 
 	done := make(chan struct{}, 0)
@@ -77,4 +77,11 @@ func main(){
 		cancel()
 	case <-done:
 	}
+}
+
+func logMiddleWare(next http.Handler)(http.Handler){
+	return (http.HandlerFunc)(func(rw http.ResponseWriter, req *http.Request){
+		loger.Infof("[%s] %s %s", req.RemoteAddr, req.Method, req.URL.Path)
+		next.ServeHTTP(rw, req)
+	})
 }
