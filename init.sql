@@ -31,3 +31,12 @@ CREATE TABLE daemon_tokens (
 	CONSTRAINT daemon_server FOREIGN KEY (`server`)
 	REFERENCES servers(`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE server_web_plugins (
+	`server`  VARCHAR(64) NOT NULL,
+	`plugin`  VARCHAR(64) NOT NULL,
+	`version` VARCHAR(64) NOT NULL,
+	PRIMARY KEY (`server`, `plugin`),
+	CONSTRAINT server_web_plugin_sid FOREIGN KEY (`server`)
+	REFERENCES servers(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;

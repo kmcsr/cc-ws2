@@ -19,7 +19,7 @@ function askWs(type, data){
 	})
 }
 
-onBeforeMount(async () => {
+async function refreshTerms(){
 	const res = await askWs('list_terms', {
 		host: props.hostid,
 		conn: props.connid,
@@ -33,6 +33,10 @@ onBeforeMount(async () => {
 		o.running = true
 		return o
 	})
+}
+
+onBeforeMount(async () => {
+	await Promise.all([refreshTerms()])
 })
 
 function switchTerm(i){

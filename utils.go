@@ -3,7 +3,10 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"os"
+	"strings"
 )
 
 type Map map[string]any
@@ -136,6 +139,39 @@ func writeJson(rw http.ResponseWriter, code int, data any)(err error){
 }
 
 func readJsonBody(req *http.Request, ptr any)(err error){
+	defer req.Body.Close()
 	return json.NewDecoder(req.Body).Decode(ptr)
 }
 
+func splitByte(str string, b byte)(left, right string){
+	i := strings.IndexByte(str, b)
+	if i < 0 {
+		return str, ""
+	}
+	return str[:i], str[i + 1:]
+}
+
+func splitByteR(str string, b byte)(left, right string){
+	i := strings.LastIndexByte(str, b)
+	if i < 0 {
+		return "", str
+	}
+	return str[:i], str[i + 1:]
+}
+
+func safeDownload(reader io.Reader, path string)(err error){
+	var fd *os.File
+	if fd, err = os.OpenFile(path + ".downloading", os.O_RDWR | os.O_CREATE | os.O_TRUNC, 0644); err != nil {
+		return
+	}
+	defer os.Remove(fd.Name())
+	_, err = io.Copy(fd, reader)
+	fd.Close()
+	if err != nil {
+		return
+	}
+	if err = os.Rename(fd.Name(), path); err != nil {
+		return
+	}
+	return nil
+}

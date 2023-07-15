@@ -1,22 +1,36 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import VueCookie from 'vue-cookies'
+import Alerter from './components/Alerter.vue'
+
+const mounted = ref(false)
+const alerter = ref(null)
 
 const token = ref(VueCookie.get('_token'))
 
-function reconnect(){ // TODO: better prompt
-	let tk = prompt('Input the connect token:')
-	if(confirm('Save this token for auto login?')){
+async function reconnect(){ // TODO: better prompt
+	let tk = await prompt('Input the connect token:')
+	if(!tk){
+		return
+	}
+	if(await confirm('Save this token for auto login?')){
 		VueCookie.set('_token', tk, '30d')
 	}
 	token.value = tk
 }
 
-if(!token.value){
-	console.debug('Using saved token')
-	reconnect()
-}
+onMounted(async () => {
+	({alert: window.alert, confirm: window.confirm, prompt: window.prompt} = alerter.value)
+	try{
+		if(!token.value){
+			console.debug('Using saved token')
+			await reconnect()
+		}
+	}finally{
+		mounted.value = true
+	}
+})
 
 </script>
 
@@ -24,15 +38,30 @@ if(!token.value){
 	<header id="header">
 		<button @click="reconnect">Reconnect</button>
 		<nav id="header-nav">
-			<RouterLink to="/">Dashboard</RouterLink>
-			<RouterLink to="/admins">Admin</RouterLink>
+			<RouterLink class="green" to="/">Dashboard</RouterLink>
+			<RouterLink class="green" to="/admins">Admin</RouterLink>
 		</nav>
 	</header>
 	<div id="body">
-		<RouterView :token="token" :key="token"/>
+		<RouterView v-slot="{ Component }"> 
+			<!-- https://vuejs.org/guide/built-ins/suspense.html#combining-with-other-components -->
+			<template v-if="mounted && Component">
+				<KeepAlive :include="['DashboardView']">
+					<Suspense>
+						<component :is="Component"
+							:token="token" :key="token">
+						</component>
+						<template #fallback>
+							Loading...
+						</template>
+					</Suspense>
+				</KeepAlive>
+			</template>
+		</RouterView>
 	</div>
 	<footer id="footer">
 	</footer>
+	<Alerter ref="alerter"/>
 </template>
 
 <style scoped>

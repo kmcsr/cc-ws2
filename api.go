@@ -3,6 +3,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"time"
 )
 
@@ -19,6 +20,8 @@ const (
 var (
 	PermDeniedErr = errors.New("Permission denied")
 	TokenNotExistsErr = errors.New("Token not exists")
+	PluginNotExistsErr = errors.New("Plugin not exists")
+	ErrIsDir = errors.New("Plugin not exists")
 )
 
 type Token struct {
@@ -33,7 +36,25 @@ type DaemonToken struct {
 	Expiration *time.Time `json:"expiration"`
 }
 
-type API interface {
+type WebScriptId struct {
+	Id      string `json:"id"`
+	Version string `json:"version"`
+}
+
+type WebScriptMeta struct {
+	WebScriptId
+	Name   string `json:"name"`
+	Author string `json:"author"`
+	Desc   string `json:"desc"`
+}
+
+type FileInfo struct {
+	Name    string `json:"name"`
+	IsDir   bool   `json:"isdir"`
+	ModTime time.Time `json:"modTime"`
+}
+
+type DataAPI interface {
 	NewCliToken(expiration *time.Time)(token string, err error)
 	NewDaemonToken(server string, expiration *time.Time)(token string, err error)
 	RemoveCliToken(token string)(err error)
@@ -49,6 +70,16 @@ type API interface {
 	ListServers(token string)(servers []string, err error)
 	CheckPerm(token string, server string)(ok bool)
 	SetPerm(token string, server string, ok bool)(err error)
+	ListServerWebScripts(server string)(scripts []WebScriptId, err error)
+}
+
+type FsAPI interface {
+	CreatePlugin(plugin WebScriptMeta)(err error)
+	DeletePlugin(plugin WebScriptId)(err error)
+	ListPluginFiles(plugin WebScriptId, path string)(files []*FileInfo, err error)
+	GetPluginFile(plugin WebScriptId, path string)(r io.ReadSeekCloser, modTime time.Time, err error)
+	PutPluginFile(plugin WebScriptId, path string, r io.Reader)(err error)
+	DelPluginFile(plugin WebScriptId, path string)(err error)
 }
 
 func preProcessCliToken(clitoken string)(token string, ok bool){

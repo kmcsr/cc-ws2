@@ -1,0 +1,7 @@
+{
+	"id": "plugin_a",
+	"name": "PluginA",
+	"version": "1.0.0",
+	"author": "Example Author <author@example.com>",
+	"description": "This is a example plugin"
+}

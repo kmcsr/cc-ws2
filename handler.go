@@ -9,7 +9,8 @@ import (
 )
 
 type Handler struct {
-	API
+	DataAPI
+	FsAPI
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -23,9 +24,10 @@ type Handler struct {
 
 var _ HandlerI = (*Handler)(nil)
 
-func NewHandler(api API)(h *Handler){
+func NewHandler(dtapi DataAPI, fsapi FsAPI)(h *Handler){
 	h = &Handler{
-		API: api,
+		DataAPI: dtapi,
+		FsAPI: fsapi,
 		hosts: make(map[string]*HostServer),
 		clients: make(map[*CliConn]struct{}),
 	}

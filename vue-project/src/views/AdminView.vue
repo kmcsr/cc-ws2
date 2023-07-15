@@ -223,6 +223,7 @@ onMounted(async () => {
 		await refreshAll()
 	}catch(e){
 		alert('permission denied')
+		throw e
 	}
 	isroot.value = true
 })

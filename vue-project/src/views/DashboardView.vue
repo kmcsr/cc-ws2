@@ -1,14 +1,53 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeMount, onBeforeUnmount } from 'vue'
+import { RouterView } from 'vue-router'
 import Device from '../components/Device.vue'
 
 const props = defineProps({
 	token: String,
 })
 
+const plugins = ref({})
+
 const hosts = ref([])
-const selected = ref(null)
 const connected = ref(false)
+
+async function loadPlugin(urlpath){
+	const plugin = await import(urlpath)
+	if(!plugin.meta){
+		throw `Plugin don't have meta data`
+	}
+	const pid = plugin.meta.id
+	if(!pid){
+		throw `Plugin must have a register id`
+	}
+	if(!plugin.meta.name){
+		plugin.meta.name = pid
+	}
+	if(plugins.value[pid]){
+		throw `Plugin id <${pid}> is already exists`
+	}
+	plugins.value[pid] = plugin
+	return plugin
+}
+
+function setConnRef(ref){
+	if(!ref){
+		return
+	}
+	const { hostid, connid } = ref._.props
+	const host = hosts.value.find((h) => h.id === hostid)
+	if(connid){
+		if(host && host.conns){
+			const conn = host.conns.find((c) => c.id === connid)
+			if(conn){
+				conn.ref = ref
+			}
+		}
+	}else{
+		host.ref = ref
+	}
+}
 
 async function connectWs(token){
 	const ws = new WebSocket(`${window.location.origin.replace('http', 'ws')}/wscli?authTk=${encodeURIComponent(token)}`)
@@ -80,18 +119,21 @@ async function connectWs(token){
 						addr: data.addr,
 						device: data.device,
 						label: data.label,
+					host: host,
 					})
 				}
 			}else{
-				hosts.value.push({
+				host = {
 					id: data.host,
-					conns: [{
-						id: data.conn,
-						addr: data.addr,
-						device: data.device,
-						label: data.label,
-					}]
-				})
+				}
+				host.conns = [{
+					id: data.conn,
+					addr: data.addr,
+					device: data.device,
+					label: data.label,
+					host: host,
+				}]
+				hosts.value.push(host)
 			}
 			break
 		}
@@ -173,32 +215,35 @@ async function reconnect(){
 	}catch(e){
 		connected.value = false
 		console.error('Cannot connect websocket:', e)
-		alert('Cannot connect to the websocket point')
+		await alert('Cannot connect to the websocket point')
 		return
 	}
 	const res = await wsconn.ask('list_hosts')
 	if(res.status !== 'ok'){
 		console.error('Cannot get hosts:', res)
 	}else{
-		hosts.value = res.data || []
+		const hsts = res.data || []
+		hsts.forEach((host) => {
+			host.conns.forEach((conn) => {
+				conn.host = host
+			})
+		})
+		hosts.value = hsts
 	}
 }
 
-onMounted(() => {
-	reconnect()
+await reconnect()
+
+onBeforeMount(() => {
+	//
 })
 
-function switchDevice(hostid, deviceid){
-	const selecting = JSON.stringify([hostid, deviceid])
-	if(selected.value && selected.value.encoded === selecting){
-		return
+onBeforeUnmount(() => {
+	if(wsconn){
+		wsconn.close()
+		wsconn = null
 	}
-	selected.value = {
-		host: hostid,
-		device: deviceid,
-		encoded: selecting,
-	}
-}
+})
 
 </script>
 
@@ -206,46 +251,47 @@ function switchDevice(hostid, deviceid){
 	<main class="main">
 		<nav class="device-nav">
 			<h2>Devices</h2>
-			<hr class="device-nav-hr" />
+			<hr/>
 			<div v-for="host in hosts">
-				<h3>{{host.id}}</h3>
+				<h3>
+					<RouterLink :to="`${host.id}`" exact-active-class="active">
+						{{host.id}}
+					</RouterLink>
+				</h3>
 				<ul>
 					<li v-for="device in host.conns"
 						class="device-nav-item"
-						:class="(selected && selected.host === host.id && selected.device === device.id) ?'selected' :''"
-						tabindex="0"
-						@click="switchDevice(host.id, device.id)"
 					>
-						{{device.id}}
+						<RouterLink :to="`${host.id}/${device.id}`" exact-active-class="active">
+							{{device.id}}
+							<i v-if="device.label">{{device.label}}</i>
+						</RouterLink>
 					</li>
 				</ul>
 				<hr/>
 			</div>
 		</nav>
 		<div class="device-box">
-			<div v-if="selected">
-				<KeepAlive>
-					<Device :ref="(ref) => {
-							const host = hosts.find((h) => h.id === selected.host)
-							if(host){
-								const conn = host.conns.find((c) => c.id === selected.device)
-								if(conn){
-									conn.ref = ref
-								}
-							}
-						}"
-						:hostid="selected.host" :connid="selected.device" :key="selected.encoded"
-						v-on:ask="onWsAsk"
-						v-on:fire-event="onFireEvent"
-					/>
-				</KeepAlive>
-			</div>
-			<div v-else-if="connected">
-				<i>Please select a device</i>
-			</div>
-			<div v-else>
-				<b><i>Please reconnect</i></b>
-			</div>
+			<RouterView v-slot="{ Component }"> 
+				<template v-if="Component">
+					<KeepAlive>
+						<component
+							:is="Component"
+							:key="$route.fullpath"
+							:ref="setConnRef"
+							v-on:ask="onWsAsk"
+							v-on:fire-event="onFireEvent"
+							>
+						</component>
+					</KeepAlive>
+				</template>
+				<div v-else-if="connected">
+					<i>Please select a device</i>
+				</div>
+				<div v-else>
+					<b><i>Please reconnect</i></b>
+				</div>
+			</RouterView>
 		</div>
 	</main>
 </template>
@@ -266,10 +312,6 @@ function switchDevice(hostid, deviceid){
 	color: #f0f0f0;
 }
 
-.device-nav-hr {
-	margin-bottom: 1rem;
-}
-
 .device-nav>div>ul {
 	list-style-type: none;
 	padding-inline-start: 0.8rem;
@@ -281,20 +323,26 @@ function switchDevice(hostid, deviceid){
 	padding-left: 0.2rem;
 	cursor: pointer;
 	user-select: none;
+}
+
+.device-nav a {
+	display: block;
+	color: #f0f0f0;
+	text-decoration: none;
 	transition: all 0.3s ease-out;
 }
 
-.device-nav-item.selected {
+.device-nav a.active {
 	background-color: #ddd;
 	color: #444;
 	cursor: default;
 }
 
-.device-nav-item:not(.selected):hover {
+.device-nav a:not(.active):hover {
 	background-color: #ddd;
 	color: #444;
-	height: 1.7rem;
-	line-height: 1.7rem;
+	height: 1.8rem;
+	line-height: 1.8rem;
 }
 
 .device-box {

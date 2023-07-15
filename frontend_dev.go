@@ -20,6 +20,7 @@ func init(){
 		loger.Fatalf("Cannot start the frontend server: %v", err)
 	}
 	go func(){
+		defer cmd.Process.Kill()
 		if err := cmd.Wait(); err != nil {
 			loger.Errorf("npm frontend server exited: %v", err)
 		}

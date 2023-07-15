@@ -16,7 +16,7 @@ type MySQLAPI struct {
 	DB *sql.DB
 }
 
-var _ API = (*MySQLAPI)(nil)
+var _ DataAPI = (*MySQLAPI)(nil)
 
 const mysqlDeadLockCode = 1213
 
@@ -514,6 +514,32 @@ func (v *MySQLAPI)SetPerm(token string, server string, value bool)(err error){
 	}
 	return
 }
+
+func (v *MySQLAPI)ListServerWebScripts(server string)(scripts []WebScriptId, err error){
+	const queryCmd = "SELECT `id`, `version` FROM server_web_plugins" +
+		" WHERE `server`=?"
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	var rows *sql.Rows
+	if rows, err = v.QueryContext(ctx, queryCmd, server); err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var script WebScriptId
+		if err = rows.Scan(&script.Id, &script.Version); err != nil {
+			return
+		}
+		scripts = append(scripts, script)
+	}
+	if err = rows.Err(); err != nil {
+		return
+	}
+	return
+}
+
 
 func generateToken()(token string, err error){
 	var buf [tokenLen * 3 / 4]byte

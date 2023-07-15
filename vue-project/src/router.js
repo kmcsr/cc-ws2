@@ -1,6 +1,8 @@
 
 import { createRouter, createMemoryHistory, createWebHistory, createWebHashHistory } from 'vue-router'
 import DashboardView from './views/DashboardView.vue'
+import Host from './components/Host.vue'
+import Device from './components/Device.vue'
 import PageNotFound from './views/PageNotFound.vue'
 
 const PRODUCTION = process.env.NODE_ENV === 'production'
@@ -15,7 +17,19 @@ export function newRouter(){
 				component: DashboardView,
 				meta: {
 					title: 'Dashboard',
-				}
+				},
+				children: [
+					{
+						path: '/:hostid',
+						component: Host,
+						props: true,
+					},
+					{
+						path: '/:hostid/:deviceid',
+						component: Device,
+						props: true,
+					},
+				],
 			},
 			{
 				path: '/admins',

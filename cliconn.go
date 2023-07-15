@@ -14,7 +14,8 @@ import (
 )
 
 type HandlerI interface {
-	API
+	DataAPI
+	FsAPI
 	Context()(context.Context)
 	GetHost(id string)(*HostServer)
 	GetHosts()([]*HostServer)
@@ -140,6 +141,7 @@ func (c *CliConn)Handle(){
 				Device string `json:"device"`
 				Label  string `json:"label"`
 			}
+			var nilConnMeta = make([]connMeta, 0)
 			type hostMeta struct {
 				Id string        `json:"id"`
 				Conns []connMeta `json:"conns"`
@@ -175,7 +177,7 @@ func (c *CliConn)Handle(){
 				}else{
 					hosts[i] = hostMeta{
 						Id: hid,
-						Conns: nil,
+						Conns: nilConnMeta,
 					}
 				}
 			}

@@ -46,12 +46,13 @@ func main(){
 	if len(username) == 0 || len(dbaddr) == 0 || len(dbname) == 0 {
 		loger.Fatalf("Please set the envs `DB_USER`, `DB_PASSWD`, `DB_ADDR`, `DB_NAME`")
 	}
-	api, err := NewMySQLAPI(username, passwd, dbaddr, dbname)
+	dtapi, err := NewMySQLAPI(username, passwd, dbaddr, dbname)
 	if err != nil {
 		loger.Fatalf("Cannot init mysql api: %v", err)
 	}
+	fsapi := NewOSFsAPI(DataDir)
 
-	handler := NewHandler(api)
+	handler := NewHandler(dtapi, fsapi)
 
 	server := &http.Server{
 		Addr: net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
