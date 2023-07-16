@@ -13,7 +13,7 @@ const tokens = ref([])
 const daemonTokens = ref([])
 
 async function createServer(){
-	const sid = prompt('server id:')
+	const sid = await prompt('server id:')
 	if(!sid){
 		return
 	}
@@ -91,7 +91,7 @@ async function removeToken(token){
 }
 
 async function createDaemonToken(){
-	const sid = prompt('server id:')
+	const sid = await prompt('server id:')
 	if(!sid){
 		return
 	}

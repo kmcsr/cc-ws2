@@ -62,7 +62,7 @@ onMounted(async () => {
 	</div>
 	<footer id="footer">
 	</footer>
-	<Alerter ref="alerter" :secrets="[token.substr(4)]" :key="token"/>
+	<Alerter ref="alerter" :secrets="token?[token.substr(4)]:[]" :key="token"/>
 </template>
 
 <style scoped>

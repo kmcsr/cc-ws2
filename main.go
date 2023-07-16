@@ -21,6 +21,10 @@ type Config struct {
 	Port int    `json:"port"`
 }
 
+var defaultConfig = &Config{
+	Host: "",
+	Port: 80,
+}
 var config *Config = loadConfig()
 
 func loadConfig()(cfg *Config){
@@ -28,7 +32,8 @@ func loadConfig()(cfg *Config){
 	var data []byte
 	var err error
 	if data, err = os.ReadFile(configPath); err != nil {
-		loger.Fatalf("Cannot read config at %s: %v", configPath, err)
+		return defaultConfig
+		// loger.Fatalf("Cannot read config at %s: %v", configPath, err)
 	}
 	cfg = new(Config)
 	if err = json.Unmarshal(data, cfg); err != nil {

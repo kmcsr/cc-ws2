@@ -1,0 +1,43 @@
+
+services:
+  db:
+    image: mysql:latest
+    restart: always
+    volumes:
+      - ccd-logs:/var/log
+      - ccd-db:/var/lib/mysql
+    networks:
+      - ccd_server
+    environment:
+      MYSQL_DATABASE: ccWs2 # must be sync from init.sql
+      MYSQL_USER: ccd_user
+      MYSQL_PASSWORD: ccd_password
+      MYSQL_ALLOW_EMPTY_PASSWORD: yes # don't have to public the database, no need to encrypt it
+      MYSQL_INITDB_SKIP_TZINFO: yes
+  web:
+    image: craftmine/ccd:web
+    restart: always
+    depends_on:
+      - db
+    volumes:
+      - ccd-logs:/var/log
+      - ccd-data:/etc/ccwsd
+    networks:
+      - ccd_server
+    environment:
+      DEBUG: '${DEBUG}'
+      DB_USER: 'root'
+      DB_PASSWD: ''
+      DB_ADDR: 'tcp(db:3306)'
+      DB_NAME: 'ccWs2'
+    ports:
+      - "2030:80"
+
+volumes:
+  ccd-logs: {}
+  ccd-db: {}
+  ccd-data: {}
+
+networks:
+  ccd_server:
+    name: cc_daemon_server_network

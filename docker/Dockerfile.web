@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+
+ARG GO_VERSION=1.20
+ARG NPM_DIR=vue-project
+ARG REPO=github.com/kmcsr/cc-ws2
+
+FROM golang:${GO_VERSION}-alpine AS BUILD
+
+ARG NPM_DIR
+ARG REPO
+
+RUN apk add npm # TODO: split web and api program
+COPY ["${NPM_DIR}/package.json", "${NPM_DIR}/package-lock.json", "/go/src/${REPO}/vue-project/"]
+RUN --mount=type=cache,target=/root/.npm/_cacache \
+ npm -C "/go/src/${REPO}/${NPM_DIR}" ci --progress=false || { cat /root/.npm/_logs/*; exit 1; }
+
+COPY ./go.mod ./go.sum "/go/src/${REPO}/"
+COPY "." "/go/src/${REPO}/"
+
+RUN npm -C "/go/src/${REPO}/${NPM_DIR}" run build || { cat /root/.npm/_logs/*; exit 1; }
+RUN --mount=type=cache,target=/root/.cache/go-build cd "/go/src/${REPO}" && \
+  CGO_ENABLED=0 go build -v -o "/go/bin/application" "."
+
+FROM alpine:latest
+
+COPY --from=BUILD "/go/bin/application" "/application"
+
+ENTRYPOINT ["/application"]
+CMD [":80"]
