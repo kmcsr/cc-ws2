@@ -75,12 +75,47 @@ func (api *OSFsAPI)DeletePlugin(plugin WebScriptId)(err error){
 	return
 }
 
+func (api *OSFsAPI)ListPlugins()(plugins []WebScriptMeta, err error){
+	path := api.joinPath(pluginsDirName)
+	entries, er := os.ReadDir(path)
+	if er != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			pluginId := e.Name()
+			pluginDir := filepath.Join(path, pluginId)
+			versions, er := os.ReadDir(pluginDir)
+			if er == nil {
+				for _, v := range versions {
+					if v.IsDir() {
+						version := v.Name()
+						buf, er := os.ReadFile(filepath.Join(pluginDir, version, "meta.json"))
+						if er == nil {
+							var meta WebScriptMeta
+							if er = json.Unmarshal(buf, &meta); er == nil {
+								if meta.Id != pluginId || meta.Version != version {
+									loger.Errorf("Plugin id dismatch metadata: path=%q version=%s meta=%v", pluginDir, version, meta)
+									continue
+								}
+								plugins = append(plugins, meta)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
 func (api *OSFsAPI)ListPluginFiles(plugin WebScriptId, path string)(files []*FileInfo, err error){
-	if _, er := api.tryPath(pluginsDirName, plugin.Id, plugin.Version); er != nil {
+	pth, er := api.tryPath(pluginsDirName, plugin.Id, plugin.Version)
+	if er != nil {
 		err = PluginNotExistsErr
 		return
 	}
-	entries, err := os.ReadDir(api.joinPath(pluginsDirName, plugin.Id, plugin.Version, filepath.FromSlash(path)))
+	entries, err := os.ReadDir(filepath.Join(pth, filepath.FromSlash(path)))
 	if err != nil {
 		return
 	}

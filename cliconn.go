@@ -84,14 +84,16 @@ func (c *CliConn)checkAndGetHost(rid int, hostid string)(host *HostServer){
 	if !c.handler.CheckPerm(c.token, hostid) {
 		c.Reply(rid, Map{
 			"status": "error",
-			"error": fmt.Sprintf("Host %q not found or permission denied", hostid),
+			"error": "Host not found or permission denied",
+			"hostid": hostid,
 		})
 		return
 	}
 	if host = c.handler.GetHost(hostid); host == nil {
 		c.Reply(rid, Map{
 			"status": "error",
-			"error": fmt.Sprintf("Host %q not found", hostid),
+			"error": "Host not found",
+			"hostid": hostid,
 		})
 		return
 	}
@@ -230,7 +232,8 @@ func (c *CliConn)Handle(){
 			if conn == nil {
 				c.Reply(id, Map{
 					"status": "error",
-					"error": fmt.Sprintf("Conn %d not found", connid),
+					"error": "Conn not found",
+					"connid": connid,
 				})
 				break
 			}
@@ -252,7 +255,8 @@ func (c *CliConn)Handle(){
 			if conn == nil {
 				c.Reply(id, Map{
 					"status": "error",
-					"error": fmt.Sprintf("Conn %d not found", connid),
+					"error": "Conn not found",
+					"connid": connid,
 				})
 				break
 			}

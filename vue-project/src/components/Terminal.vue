@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onBeforeMount } from 'vue'
+import { ref, computed, onBeforeMount, onMounted, onBeforeUnmount } from 'vue'
 import { toHexColor, mouseBtnToCC, keyCodeToCC } from '../utils'
 
 const props = defineProps({
@@ -9,6 +9,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['ask', 'fire-event'])
+
+const termBox = ref(null)
 
 const closed = ref(false)
 const width = ref(0)
@@ -65,6 +67,22 @@ onBeforeMount(async () => {
 		cursorX: cursorX.value,
 		cursorY: cursorY.value,
 	} = termData)
+})
+
+function onPaste(event){
+	if(document.activeElement === termBox.value){
+		event.preventDefault()
+		const text = event.clipboardData.getData("text")
+		fireEvent('paste', text)
+	}
+}
+
+onMounted(() => {
+	document.addEventListener('paste', onPaste)
+})
+
+onBeforeUnmount(() => {
+	document.removeEventListener('paste', onPaste)
 })
 
 function getPaletteColor(code){
@@ -245,6 +263,9 @@ function onTermOper(data){
 	}
 	case 'clearLine': {
 		let [y] = args[2]
+		if(typeof y === 'undefined'){
+			y = cursorY.value
+		}
 		if(y < 0 || y >= height.value){
 			break
 		}
@@ -267,7 +288,14 @@ function onTermOper(data){
 	}
 }
 
+function focus(){
+	if(termBox.value){
+		termBox.value.focus()
+	}
+}
+
 defineExpose({
+	focus,
 	onTermClose,
 	onTermOper,
 })
@@ -277,6 +305,7 @@ defineExpose({
 <template>
 	<div>
 		<div class="term" tabindex="0"
+			ref="termBox"
 			@contextmenu.prevent
 			@keydown="(event) => onKeydown(event)"
 			@keyup.prevent="(event) => onKeyup(event)"
@@ -285,7 +314,7 @@ defineExpose({
 				<span v-for="(ch, x) in line.text" :key="x"
 					@mousedown="(event) => onMousedown(event, x, y)"
 					@mouseup="(event) => onMouseup(event, x, y)"
-					@mousewheel.prevent="(event) => onMousewheel(event, x, y)"
+					@mousewheel.capture.prevent="(event) => onMousewheel(event, x, y)"
 					:style="{
 						'color': getPaletteColor(line.color[x]),
 						'background-color': getPaletteColor(line.background[x])
@@ -332,9 +361,11 @@ defineExpose({
 }
 
 .term-cursor {
-	float: left;
+	position: absolute;
+	bottom: 0;
 	padding: 0;
 	font-family: monospace;
+	font-weight: 900;
 	animation: flash 0.9s infinite;
 	user-select: none;
 }

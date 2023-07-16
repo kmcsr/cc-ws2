@@ -255,17 +255,23 @@ func (c *Conn)Ask(typ string, data any)(res any, err error){
 	return
 }
 
-func (c *Conn)Exec(codes string)(res []any, err error){
+func (c *Conn)Exec(codes string)(res List, err error){
 	r, err := c.Ask("exec", codes)
 	if err != nil {
 		return
 	}
-	r0 := r.(Map)
-	status := r0["status"].(string)
+	r0 := (Map)(r.(map[string]any))
+	status, _ := r0.GetString("status")
 	if status != "ok" {
-		return nil, &ExecErr{ r0["error"].(string) }
+		errmsg, ok := r0.GetString("err")
+		if !ok {
+			loger.Errorf("Unknown error: %v", r0)
+			errmsg = "Unknown error"
+		}
+		return nil, &ExecErr{ errmsg }
 	}
-	return r0["res"].([]any), nil
+	res, _ = r0.GetList("res")
+	return
 }
 
 func (c *Conn)Run(program string, args ...any)(term *Term, done <-chan bool, err error){

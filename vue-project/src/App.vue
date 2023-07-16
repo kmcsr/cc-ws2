@@ -9,7 +9,7 @@ const alerter = ref(null)
 
 const token = ref(VueCookie.get('_token'))
 
-async function reconnect(){ // TODO: better prompt
+async function relog(){ // TODO: better prompt
 	let tk = await prompt('Input the connect token:')
 	if(!tk){
 		return
@@ -25,7 +25,7 @@ onMounted(async () => {
 	try{
 		if(!token.value){
 			console.debug('Using saved token')
-			await reconnect()
+			await relog()
 		}
 	}finally{
 		mounted.value = true
@@ -36,9 +36,10 @@ onMounted(async () => {
 
 <template>
 	<header id="header">
-		<button @click="reconnect">Reconnect</button>
+		<button @click="relog">Relog</button>
 		<nav id="header-nav">
-			<RouterLink class="green" to="/">Dashboard</RouterLink>
+			<RouterLink class="green" to="/dashboard">Dashboard</RouterLink>
+			<RouterLink class="green" to="/settings">Settings</RouterLink>
 			<RouterLink class="green" to="/admins">Admin</RouterLink>
 		</nav>
 	</header>
@@ -61,7 +62,7 @@ onMounted(async () => {
 	</div>
 	<footer id="footer">
 	</footer>
-	<Alerter ref="alerter"/>
+	<Alerter ref="alerter" :secrets="[token.substr(4)]" :key="token"/>
 </template>
 
 <style scoped>
@@ -81,6 +82,7 @@ onMounted(async () => {
 }
 
 #header-nav>a {
+	display: inline-block;
 	padding: 0 0.5rem;
 }
 

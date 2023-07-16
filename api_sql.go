@@ -515,15 +515,21 @@ func (v *MySQLAPI)SetPerm(token string, server string, value bool)(err error){
 	return
 }
 
-func (v *MySQLAPI)ListServerWebScripts(server string)(scripts []WebScriptId, err error){
-	const queryCmd = "SELECT `id`, `version` FROM server_web_plugins" +
-		" WHERE `server`=?"
+func (v *MySQLAPI)ListCliWebScripts(token string)(scripts []WebScriptId, err error){
+	const queryCmd = "SELECT `plugin`, `version` FROM cli_web_plugins" +
+		" WHERE `token`=?"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		err = TokenNotExistsErr
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
 	defer cancel()
 
 	var rows *sql.Rows
-	if rows, err = v.QueryContext(ctx, queryCmd, server); err != nil {
+	if rows, err = v.QueryContext(ctx, queryCmd, token); err != nil {
 		return
 	}
 	defer rows.Close()
@@ -535,6 +541,64 @@ func (v *MySQLAPI)ListServerWebScripts(server string)(scripts []WebScriptId, err
 		scripts = append(scripts, script)
 	}
 	if err = rows.Err(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)AddCliWebScript(token string, plugin WebScriptId)(err error){
+	const insertCmd = "INSERT INTO cli_web_plugins (`token`, `plugin`, `version`)" +
+		" VALUES (?, ?, ?)"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		err = TokenNotExistsErr
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, insertCmd, token, plugin.Id, plugin.Version); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		return
+	}
+	return
+}
+
+func (v *MySQLAPI)DelCliWebScript(token string, plugin string)(err error){
+	const deleteCmd = "DELETE FROM cli_web_plugins" +
+		" WHERE `token`=? AND `plugin`=?"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		err = TokenNotExistsErr
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	tx, err := v.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err = execTx(tx, deleteCmd, token, plugin); err != nil {
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
 		return
 	}
 	return

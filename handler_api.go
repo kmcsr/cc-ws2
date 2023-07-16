@@ -254,32 +254,24 @@ func (h *Handler)newApiMux()(mux *http.ServeMux){
 			"data": servers,
 		})
 	})
-	mux.HandleFunc("/server_plugins", func(rw http.ResponseWriter, req *http.Request){
-		token := req.Header.Get("Authorization")
-		if !h.AuthCli(token) {
-			writeUnauth(rw)
-			return
-		}
-		values := req.URL.Query()
-		server := values.Get("server")
-		scripts, err := h.ListServerWebScripts(server)
-		if err != nil {
-			writeInternalError(rw, err)
-			return
-		}
-		if scripts == nil {
-			scripts = make([]WebScriptId, 0)
-		}
-		writeJson(rw, http.StatusOK, Map{
-			"status": "ok",
-			"data": scripts,
-		})
-	})
 	mux.HandleFunc("/web_plugin", func(rw http.ResponseWriter, req *http.Request){
 		var err error
 		
 		values := req.URL.Query()
 		switch req.Method {
+		case "GET": // List all plugins
+			plugins, err := h.ListPlugins()
+			if err != nil {
+				writeInternalError(rw, err)
+				return
+			}
+			if plugins == nil {
+				plugins = make([]WebScriptMeta, 0)
+			}
+			writeJson(rw, http.StatusOK, Map{
+				"status": "ok",
+				"data": plugins,
+			})
 		case "POST": // Update plugin metadata
 			token := req.Header.Get("Authorization")
 			if !h.CheckRootToken(token) {
@@ -321,6 +313,56 @@ func (h *Handler)newApiMux()(mux *http.ServeMux){
 					"status": "ok",
 				})
 			}
+		default:
+			rw.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/cli_plugin", func(rw http.ResponseWriter, req *http.Request){
+		token := req.Header.Get("Authorization")
+		if !h.AuthCli(token) {
+			writeUnauth(rw)
+			return
+		}
+		switch req.Method {
+		case "GET":
+			scripts, err := h.ListCliWebScripts(token)
+			if err != nil {
+				writeInternalError(rw, err)
+				return
+			}
+			if scripts == nil {
+				scripts = make([]WebScriptId, 0)
+			}
+			writeJson(rw, http.StatusOK, Map{
+				"status": "ok",
+				"data": scripts,
+			})
+		case "POST":
+			var plugin WebScriptId
+			if err := readJsonBody(req, &plugin); err != nil {
+				writeJson(rw, http.StatusBadRequest, Map{
+					"status": "error",
+					"error": err.Error(),
+				})
+				return
+			}
+			if err := h.AddCliWebScript(token, plugin); err != nil {
+				writeInternalError(rw, err)
+				return
+			}
+			writeJson(rw, http.StatusOK, Map{
+				"status": "ok",
+			})
+		case "DELETE":
+			values := req.URL.Query()
+			plugin := values.Get("plugin")
+			if err := h.DelCliWebScript(token, plugin); err != nil {
+				writeInternalError(rw, err)
+				return
+			}
+			writeJson(rw, http.StatusOK, Map{
+				"status": "ok",
+			})
 		default:
 			rw.WriteHeader(http.StatusMethodNotAllowed)
 		}

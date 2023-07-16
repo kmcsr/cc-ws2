@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, onBeforeMount } from 'vue'
+import { ref, computed, onBeforeMount, onUpdated } from 'vue'
+import CloseSvg from 'vue-material-design-icons/Close.vue'
 import Terminal from './Terminal.vue'
+import HNode from './HNode.vue'
 
 const props = defineProps({
 	hostid: String,
@@ -9,15 +11,69 @@ const props = defineProps({
 
 const emit = defineEmits(['ask', 'fire-event'])
 
-const terms = ref([])
-const selectedTermIndex = ref(null)
-const selectedTermId = computed(() => selectedTermIndex.value === null ?null :terms.value[selectedTermIndex.value].id)
-
 function askWs(type, data){
 	return new Promise((resolve) => {
 		emit('ask', type, data, resolve)
 	})
 }
+
+const terms = ref([])
+const selectedTermIndex = ref(null)
+const selectedTermId = computed(() => selectedTermIndex.value === null ?null :terms.value[selectedTermIndex.value].id)
+
+class Context{
+	constructor(hostid, connid){
+		this.hostid = hostid
+		this.connid = connid
+		this.extNodes = ref([])
+		this.eventListeners = []
+		this._loadedPlugins = {}
+	}
+	loadPlugin(plugin, deviceObj){ // TODO: remove deviceObj arg
+		if(plugin.meta.id in this._loadedPlugins){
+			return false
+		}
+		this._loadedPlugins[plugin.meta.id] = plugin.onDeviceLoad(this, deviceObj)
+		return true
+	}
+	allocHTMLBlock(options){
+		const ele = document.createElement('div')
+		this.extNodes.push({node: ele, ...options})
+		return ele
+	}
+	addEventListener(listener){
+		this.eventListeners.push(listener)
+	}
+	onEvent(event){
+		this.eventListeners.forEach((fn) => {
+			fn(event)
+		})
+	}
+	exec(codes){
+		return askWs('exec', {
+			host: this.hostid,
+			conn: this.connid,
+			codes: codes,
+		}).then((res) => {
+			if(res.status !== 'ok'){
+				throw res
+			}
+			return res.res
+		})
+	}
+}
+
+const context = ref(new Context(props.hostid, props.connid))
+
+function getContext(){
+	return context.value
+}
+
+onUpdated(() => {
+	if(props.hostid !== context.value.hostid || props.connid !== context.value.connid){
+		context.value = new Context(props.hostid, props.connid)
+	}
+})
 
 async function refreshTerms(){
 	const res = await askWs('list_terms', {
@@ -26,7 +82,7 @@ async function refreshTerms(){
 	})
 	if(res.status !== 'ok'){
 		console.error('Cannot get term list:', res)
-		return
+		throw res
 	}
 	const rterms = res.res;
 	terms.value = rterms.map((o) => {
@@ -35,12 +91,14 @@ async function refreshTerms(){
 	})
 }
 
-onBeforeMount(async () => {
-	await Promise.all([refreshTerms()])
-})
+await Promise.all([refreshTerms()])
 
 function switchTerm(i){
 	selectedTermIndex.value = i
+	const term = terms.value[i]
+	if(term.ref){
+		term.ref.focus()
+	}
 }
 
 function closeTerm(i){
@@ -53,28 +111,34 @@ function closeTerm(i){
 }
 
 async function onNewTerm(){
-	var program = prompt('Program:')
+	var program = await prompt('Program:')
 	if(!program){
 		return
 	}
-	var arg = prompt('Arg:')
+	var arg = await prompt('Arg:')
 	if(arg === null){
 		return
 	}
+	var args = arg ?[arg] :[]
+	selectedTermIndex.value = null
 	const res = await askWs('run', {
 		host: props.hostid,
 		conn: props.connid,
 		prog: program,
-		args: [arg],
+		args: args,
 	})
 	if(res.status !== 'ok'){
 		console.error('Cannot start new program:', res)
-		alert('Err: ' + res.error)
+		await alert('Err: ' + res.error)
 		return
 	}
 	console.debug('Successed to start program:', res)
-	selectedTermIndex.value = null
 	return
+}
+
+//:export event
+function onEvent(data){
+	context.value.onEvent(data)
 }
 
 //:export event
@@ -93,7 +157,7 @@ function onTermOpen(data){
 		running: true,
 	})
 	if(selectedTermIndex.value === null){
-		selectedTermIndex.value = terms.value.length - 1
+		switchTerm(terms.value.length - 1)
 	}
 }
 
@@ -129,6 +193,9 @@ function onTermOper(data){
 }
 
 defineExpose({
+	props,
+	getContext,
+	onEvent,
 	onDeviceLeave,
 	onTermOpen,
 	onTermClose,
@@ -152,7 +219,9 @@ defineExpose({
 				>
 					{{term.title}}
 					<button class="term-close-btn" @click="closeTerm(i)"
-						title="Close this terminal">X</button>
+						title="Close this terminal">
+						<CloseSvg size="1rem"/>
+					</button>
 				</button>
 			</TransitionGroup>
 			<button class="term-new-btn" @click="onNewTerm">
@@ -166,6 +235,9 @@ defineExpose({
 							const term = terms[selectedTermIndex]
 							if(term){
 								term.ref = ref
+								if(ref){
+									ref.focus()
+								}
 							}
 						}"
 						:hostid="hostid" :connid="connid" :termid="selectedTermId" :key="terms[selectedTermIndex]"
@@ -177,6 +249,9 @@ defineExpose({
 			<div v-else>
 				<i>Please select or create a terminal</i>
 			</div>
+		</div>
+		<div class="extention-box">
+			<HNode v-for="ele in context.extNodes" :node="ele.node" :styles="ele.styles"/>
 		</div>
 	</div>
 </template>
@@ -244,7 +319,7 @@ defineExpose({
 }
 
 .term-close-btn {
-	height: 50%;
+	height: 1rem;
 	padding: 0;
 	margin-left: 0.5rem;
 	border: none;

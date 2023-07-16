@@ -2,6 +2,10 @@
 import { ref, watch } from 'vue'
 import CloseSvg from 'vue-material-design-icons/Close.vue'
 
+const props = defineProps({
+	secrets: Array, // []String
+})
+
 var closeCb = null
 
 const ALERT_ID = 1
@@ -48,6 +52,7 @@ function close(...args){
 	}
 	show.value = 0
 	message.value = null
+	inputs.value = null
 }
 
 function alert(msg){
@@ -65,7 +70,13 @@ function alert(msg){
 		beforeActive()
 		closeCb = resolve
 		show.value = ALERT_ID
-		message.value = typeof msg === 'undefined' ?'' :String(msg)
+		msg = typeof msg === 'undefined' ?'' :String(msg)
+		if(props.secrets){
+			for(let s of props.secrets){
+				msg = msg.replaceAll(s, '****')
+			}
+		}
+		message.value = msg
 	})
 }
 
@@ -104,6 +115,7 @@ function prompt(msg){
 		closeCb = resolve
 		show.value = PROMPT_ID
 		message.value = typeof msg === 'undefined' ?'Prompt' :String(msg)
+		inputs.value = ''
 	})
 }
 
@@ -127,7 +139,7 @@ defineExpose({
 							</span>
 							Alert
 						</h3>
-						<p>{{message}}</p>
+						<p class="alert-message">{{message}}</p>
 						<div class="alert-btns">
 							<button ref="doneBtn" @click="close(true)">OK</button>
 						</div>
@@ -139,7 +151,7 @@ defineExpose({
 							</span>
 							Confirm
 						</h3>
-						<p>{{message}}</p>
+						<p class="alert-message">{{message}}</p>
 						<div class="alert-btns">
 							<button @click="close(false)">Cancel</button>
 							<button ref="doneBtn" @click="close(true)">OK</button>
@@ -183,6 +195,7 @@ defineExpose({
 	position: fixed;
 	top: 0;
 	left: 0;
+	z-index: 99999;
 	width: 100vw;
 	height: 100vh;
 	background-color: var(--alert-cover-color);
@@ -224,13 +237,20 @@ defineExpose({
 	transform: rotate(90deg);
 }
 
+.alert-message {
+	overflow: auto;
+}
+
 .prompt-input {
 	display: block;
 	width: 100%;
 	min-width: 100%;
 	max-width: 100%;
-	min-height: 4rem;
+	min-height: 2rem;
+	height: 2rem;
 	max-height: 60vh;
+	padding: 0.5rem;
+	font-size: 0.8rem;
 }
 
 </style>

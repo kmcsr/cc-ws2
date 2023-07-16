@@ -277,7 +277,7 @@ func (t *Term)oper(oper string, args List)(res []any, err error){
 	case "clearLine":
 		y, ok := args.GetInt(0)
 		if !ok {
-			return nil, &ArgTypeErr{ 0, "int" }
+			y = t.cursorY
 		}
 		t.clearLine(y)
 		return

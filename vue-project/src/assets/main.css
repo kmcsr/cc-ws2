@@ -1,4 +1,5 @@
 @import './base.css';
+@import './minecraft.css';
 
 #app {
 	height: 100vh;
@@ -13,6 +14,10 @@
 
 hr {
 	margin-bottom: 1rem;
+}
+
+.picon {
+	image-rendering: pixelated;
 }
 
 @media (hover: hover) {

@@ -70,12 +70,17 @@ type DataAPI interface {
 	ListServers(token string)(servers []string, err error)
 	CheckPerm(token string, server string)(ok bool)
 	SetPerm(token string, server string, ok bool)(err error)
-	ListServerWebScripts(server string)(scripts []WebScriptId, err error)
+
+	ListCliWebScripts(token string)(scripts []WebScriptId, err error)
+	AddCliWebScript(token string, plugin WebScriptId)(err error)
+	DelCliWebScript(token string, plugin string)(err error)
 }
 
 type FsAPI interface {
 	CreatePlugin(plugin WebScriptMeta)(err error)
 	DeletePlugin(plugin WebScriptId)(err error)
+	ListPlugins()(plugins []WebScriptMeta, err error)
+
 	ListPluginFiles(plugin WebScriptId, path string)(files []*FileInfo, err error)
 	GetPluginFile(plugin WebScriptId, path string)(r io.ReadSeekCloser, modTime time.Time, err error)
 	PutPluginFile(plugin WebScriptId, path string, r io.Reader)(err error)

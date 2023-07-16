@@ -1,53 +1,134 @@
 <script setup>
-import { ref, onBeforeMount, onBeforeUnmount } from 'vue'
-import { RouterView } from 'vue-router'
-import Device from '../components/Device.vue'
+import { ref, watch, onMounted, onBeforeUnmount, onErrorCaptured } from 'vue'
+import { onBeforeRouteUpdate, RouterView } from 'vue-router'
+import axios from 'axios'
+import Cube3D from '../components/Cube3D.vue'
 
 const props = defineProps({
 	token: String,
 })
 
+const loadError = ref(null)
 const plugins = ref({})
 
 const hosts = ref([])
 const connected = ref(false)
+const routerRef = ref(null)
 
-async function loadPlugin(urlpath){
-	const plugin = await import(urlpath)
-	if(!plugin.meta){
-		throw `Plugin don't have meta data`
+async function loadPlugin(pluginid, version){
+	if(version === 'outside'){
+		console.log(`loading outside plugin at ${pluginid}`)
+		return loadPluginByUrl(pluginid)
 	}
-	const pid = plugin.meta.id
+	console.log(`loading plugin ${pluginid} v${version}`)
+	const urlpath = `/api/web_plugin/${pluginid}/${version}`
+	return loadPluginByUrl(urlpath)
+}
+
+async function loadPluginByUrl(urlpath){
+	if(urlpath.substr(-1) === '/'){
+		urlpath = urlpath.substring(0, urlpath.length - 1)
+	}
+	const meta = (await axios.get(`${urlpath}/meta.json`)).data
+	const pid = meta.id
 	if(!pid){
 		throw `Plugin must have a register id`
 	}
-	if(!plugin.meta.name){
-		plugin.meta.name = pid
+	if(!meta.name){
+		meta.name = pid
 	}
+	const pluginM = await import(`${urlpath}/index.mjs`)
+	const plugin = {}
+	for(let key of Object.keys(pluginM)){
+		plugin[key] = pluginM[key]
+	}
+	plugin.meta = meta
 	if(plugins.value[pid]){
 		throw `Plugin id <${pid}> is already exists`
 	}
 	plugins.value[pid] = plugin
+
+	if(routerRef.value){
+		let ref = routerRef.value
+		let { hostid, connid } = ref.props
+		let ctx = ref.getContext()
+		let host = hosts.value.find((h) => h.id === hostid)
+		if(connid){
+			let conn = host.conns.find((c) => c.id === connid)
+			forEachPlugin((plugin) => {
+				ctx.loadPlugin(plugin, conn)
+			})
+		}else{
+			forEachPlugin((plugin) => {
+				ctx.loadPlugin(plugin, host)
+			})
+		}
+	}
 	return plugin
 }
 
-function setConnRef(ref){
-	if(!ref){
+async function loadPlugins(){
+	const pluginList = (await axios.get(`/api/cli_plugin`, {
+		headers: {
+			'Authorization': props.token,
+		}
+	})).data.data
+	return await Promise.all(pluginList.map(
+		(plugin) => loadPlugin(plugin.id, plugin.version)))
+}
+
+function forEachPlugin(cb){
+	return Object.values(plugins.value).forEach(cb)
+}
+
+onBeforeRouteUpdate(() => {
+	loadError.value = null
+})
+
+onErrorCaptured((err) => {
+	if(err.error){
+		loadError.value = err.error
+	}else{
+		loadError.value = String(err)
+	}
+})
+
+var lastFocus = ''
+
+watch(routerRef, (ref) => {
+	if(!ref || loadError.value){
 		return
 	}
-	const { hostid, connid } = ref._.props
+	const propstr = JSON.stringify(ref.props)
+	const { hostid, connid } = ref.props
+	const ctx = ref.getContext()
 	const host = hosts.value.find((h) => h.id === hostid)
-	if(connid){
-		if(host && host.conns){
-			const conn = host.conns.find((c) => c.id === connid)
-			if(conn){
-				conn.ref = ref
-			}
-		}
-	}else{
-		host.ref = ref
+	if(!host){
+		return
 	}
-}
+	if(connid){ // focused on device
+		if(host.conns){
+			const conn = host.conns.find((c) => c.id === connid)
+			if(!conn || conn.ref === ref || lastFocus === propstr){
+				return
+			}
+			conn.ref = ref
+			lastFocus = propstr
+			forEachPlugin((plugin) => {
+				ctx.loadPlugin(plugin, conn)
+			})
+		}
+	}else{ // focused on host
+		if(host.ref === ref && lastFocus === propstr){
+			return
+		}
+		host.ref = ref
+		lastFocus = propstr
+		forEachPlugin((plugin) => {
+			ctx.loadPlugin(plugin, host)
+		})
+	}
+})
 
 async function connectWs(token){
 	const ws = new WebSocket(`${window.location.origin.replace('http', 'ws')}/wscli?authTk=${encodeURIComponent(token)}`)
@@ -151,6 +232,13 @@ async function connectWs(token){
 			}
 			break
 		}
+		case 'device_event': {
+			const obj = _getConnObj(data)
+			if(obj && obj.ref){
+				obj.ref.onEvent(data)
+			}
+			break
+		}
 		case 'term.open': {
 			const obj = _getConnObj(data)
 			if(obj && obj.ref){
@@ -173,7 +261,7 @@ async function connectWs(token){
 			break
 		}
 		default:
-			// console.debug('not handled msg:', data)
+			console.debug('not handled event:', event)
 		}
 	})
 	ws.addEventListener('error', (event) => {
@@ -234,8 +322,8 @@ async function reconnect(){
 
 await reconnect()
 
-onBeforeMount(() => {
-	//
+onMounted(async () => {
+	await loadPlugins()
 })
 
 onBeforeUnmount(() => {
@@ -254,7 +342,7 @@ onBeforeUnmount(() => {
 			<hr/>
 			<div v-for="host in hosts">
 				<h3>
-					<RouterLink :to="`${host.id}`" exact-active-class="active">
+					<RouterLink :to="`/dashboard/${host.id}`" exact-active-class="active">
 						{{host.id}}
 					</RouterLink>
 				</h3>
@@ -262,7 +350,7 @@ onBeforeUnmount(() => {
 					<li v-for="device in host.conns"
 						class="device-nav-item"
 					>
-						<RouterLink :to="`${host.id}/${device.id}`" exact-active-class="active">
+						<RouterLink :to="`/dashboard/${host.id}/${device.id}`" exact-active-class="active">
 							{{device.id}}
 							<i v-if="device.label">{{device.label}}</i>
 						</RouterLink>
@@ -272,17 +360,25 @@ onBeforeUnmount(() => {
 			</div>
 		</nav>
 		<div class="device-box">
+			<div v-if="loadError">
+				<i><b>Error: {{loadError}}</b></i>
+			</div>
 			<RouterView v-slot="{ Component }"> 
 				<template v-if="Component">
 					<KeepAlive>
-						<component
-							:is="Component"
-							:key="$route.fullpath"
-							:ref="setConnRef"
-							v-on:ask="onWsAsk"
-							v-on:fire-event="onFireEvent"
-							>
-						</component>
+						<Suspense>
+							<component
+								:is="Component"
+								:key="$route.fullPath"
+								ref="routerRef"
+								v-on:ask="onWsAsk"
+								v-on:fire-event="onFireEvent"
+								>
+							</component>
+							<template #fallback>
+								Loading...
+							</template>
+						</Suspense>
 					</KeepAlive>
 				</template>
 				<div v-else-if="connected">
@@ -348,6 +444,7 @@ onBeforeUnmount(() => {
 .device-box {
 	padding: 1rem;
 	width: calc(100% - 13rem);
+	overflow: auto;
 }
 
 </style>

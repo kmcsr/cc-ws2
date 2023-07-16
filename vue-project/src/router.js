@@ -13,6 +13,13 @@ export function newRouter(){
 		routes: [
 			{
 				path: '/',
+				name: 'main',
+				redirect: {
+					name: 'dashboard',
+				}
+			},
+			{
+				path: '/dashboard',
 				name: 'dashboard',
 				component: DashboardView,
 				meta: {
@@ -20,16 +27,26 @@ export function newRouter(){
 				},
 				children: [
 					{
-						path: '/:hostid',
+						path: ':hostid',
 						component: Host,
 						props: true,
 					},
 					{
-						path: '/:hostid/:deviceid',
+						path: ':hostid/:connid',
 						component: Device,
-						props: true,
+						props: (route) => {
+							return { ...route.params, ...{ connid: Number.parseInt(route.params.connid) } }
+						},
 					},
 				],
+			},
+			{
+				path: '/settings',
+				name: 'settings',
+				component: () => import('./views/SettingsView.vue'),
+				meta: {
+					title: 'Settings',
+				}
 			},
 			{
 				path: '/admins',
