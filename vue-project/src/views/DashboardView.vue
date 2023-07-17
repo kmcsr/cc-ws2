@@ -48,9 +48,10 @@ async function loadPluginByUrl(urlpath){
 	}
 	plugins.value[pid] = plugin
 
-	if(routerRef.value){
-		let ref = routerRef.value
-		let { hostid, connid } = ref.props
+	const ref = routerRef.value
+	if(ref){
+		const props = ref.props || ref._.props
+		let { hostid, connid } = props
 		let ctx = ref.getContext()
 		let host = hosts.value.find((h) => h.id === hostid)
 		if(connid){
@@ -99,8 +100,9 @@ watch(routerRef, (ref) => {
 	if(!ref || loadError.value){
 		return
 	}
-	const propstr = JSON.stringify(ref.props)
-	const { hostid, connid } = ref.props
+	const props = ref.props
+	const propstr = JSON.stringify(props)
+	const { hostid, connid } = props
 	const ctx = ref.getContext()
 	const host = hosts.value.find((h) => h.id === hostid)
 	if(!host){
@@ -366,19 +368,14 @@ onBeforeUnmount(() => {
 			<RouterView v-slot="{ Component }"> 
 				<template v-if="Component">
 					<KeepAlive>
-						<Suspense>
-							<component
-								:is="Component"
-								:key="$route.fullPath"
-								ref="routerRef"
-								v-on:ask="onWsAsk"
-								v-on:fire-event="onFireEvent"
-								>
-							</component>
-							<template #fallback>
-								Loading...
-							</template>
-						</Suspense>
+						<component
+							:is="Component"
+							:key="$route.fullPath"
+							ref="routerRef"
+							v-on:ask="onWsAsk"
+							v-on:fire-event="onFireEvent"
+							>
+						</component>
 					</KeepAlive>
 				</template>
 				<div v-else-if="connected">

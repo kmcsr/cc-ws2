@@ -91,7 +91,9 @@ async function refreshTerms(){
 	})
 }
 
-await Promise.all([refreshTerms()])
+onBeforeMount(async () => {
+	await Promise.all([refreshTerms()])
+})
 
 function switchTerm(i){
 	selectedTermIndex.value = i

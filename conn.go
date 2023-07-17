@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -84,6 +85,18 @@ func AcceptConn(ctx context.Context, rw http.ResponseWriter, req *http.Request)(
 	}
 	c.device = req.Header.Get("X-CC-Device")
 	c.label = req.Header.Get("X-CC-Label")
+	go func(){
+		for {
+			select {
+			case <-time.After(10 * time.Second):
+				c.send(Map{
+					"type": "ping",
+				})
+			case <-c.ctx.Done():
+				return
+			}
+		}
+	}()
 	return
 }
 
