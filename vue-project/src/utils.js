@@ -70,8 +70,10 @@ export function keyCodeToCC(code){
 	case 'printscreen': return 'printScreen'
 	case 'shiftleft': return 'leftShift'
 	case 'shiftright': return 'rightShift'
-	case 'ctrlleft': return 'leftCtrl'
-	case 'ctrlright': return 'rightCtrl'
+	case 'ctrleft':
+	case 'controlleft': return 'leftCtrl'
+	case 'ctrlright':
+	case 'controlright': return 'rightCtrl'
 	case 'altleft': return 'leftAlt'
 	case 'altright': return 'rightAlt'
 	case 'capslock': return 'capsLock'
