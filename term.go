@@ -160,6 +160,20 @@ func NewTerm(width, height int, title string)(t *Term){
 	return
 }
 
+func (t *Term)newLine()(l lineT){
+	l = lineT{
+		Text: make([]byte, t.width),
+		Color: make([]Color, t.width),
+		Background: make([]Color, t.width),
+	}
+	for i := 0; i < t.width; i++ {
+		l.Text[i] = ' '
+		l.Color[i] = t.textColor
+		l.Background[i] = t.backgroundColor
+	}
+	return
+}
+
 func (t *Term)clearLine(y int){
 	if y < 0 || y >= t.height {
 		return
@@ -235,14 +249,14 @@ func (t *Term)oper(oper string, args List)(res []any, err error){
 			return
 		}
 		if down {
-			s := copy(t.lines, t.lines[t.height - offset:])
+			s := copy(t.lines[t.height - offset:t.height], t.lines)
 			for i := 0; i < s; i++ {
-				t.clearLine(i)
+				t.lines[i] = t.newLine()
 			}
 		}else{
-			i := copy(t.lines[offset:], t.lines)
+			i := copy(t.lines, t.lines[offset:t.height])
 			for ; i < t.height; i++ {
-				t.clearLine(i)
+				t.lines[i] = t.newLine()
 			}
 		}
 		return
