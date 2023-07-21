@@ -103,13 +103,28 @@ func (h *Handler)GetHosts()(hosts []*HostServer){
 	return
 }
 
-func (h *Handler)BroadcastToClients(hostid string, typ string, data any){
+func (h *Handler)BroadcastToClients(event string, data any, except *CliConn){
+	h.cliMux.RLock()
+	defer h.cliMux.RUnlock()
+	for c, _ := range h.clients {
+		if c != except {
+			c.send(Map{
+				"type": "custom_event",
+				"event": event,
+				"data": data,
+			})
+		}
+	}
+}
+
+func (h *Handler)BroadcastToClientsWithHost(hostid string, typ string, data any){
 	h.cliMux.RLock()
 	defer h.cliMux.RUnlock()
 	for c, _ := range h.clients {
 		if h.CheckPerm(c.token, hostid) {
 			c.send(Map{
 				"type": typ,
+				"host": hostid,
 				"data": data,
 			})
 		}
@@ -123,15 +138,13 @@ func (h *Handler)onWsdEvent(host *HostServer, conn *Conn, event string, args Lis
 	hostid := host.Id()
 	if event[0] == '#' {
 		event = event[1:]
-		h.BroadcastToClients(hostid, event, Map{
-			"host": hostid,
+		h.BroadcastToClientsWithHost(hostid, event, Map{
 			"conn": conn.Id(),
 			"args": args,
 		})
 		return
 	}
-	h.BroadcastToClients(hostid, "device_event", Map{
-		"host": hostid,
+	h.BroadcastToClientsWithHost(hostid, "device_event", Map{
 		"conn": conn.Id(),
 		"event": event,
 		"args": args,
@@ -164,16 +177,14 @@ func (h *Handler)serveWsd(rw http.ResponseWriter, req *http.Request){
 	conn.OnEvent = func(conn *Conn, event string, args List){
 		h.onWsdEvent(host, conn, event, args)
 	}
-	h.BroadcastToClients(remoteHost, "device_join", Map{
-		"host": remoteHost,
+	h.BroadcastToClientsWithHost(remoteHost, "device_join", Map{
 		"conn": conn.Id(),
 		"addr": conn.Addr(),
 		"device": conn.Device(),
 		"label": conn.Label(),
 	})
 	defer func(){
-		h.BroadcastToClients(remoteHost, "device_leave", Map{
-			"host": remoteHost,
+		h.BroadcastToClientsWithHost(remoteHost, "device_leave", Map{
 			"conn": conn.Id(),
 		})
 	}()

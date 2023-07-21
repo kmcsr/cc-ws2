@@ -59,7 +59,7 @@ func (s *HostServer)AcceptConn(rw http.ResponseWriter, req *http.Request)(conn *
 	s.conns[ccId] = nil // take the slot first
 	s.connMux.Unlock()
 
-	conn, err = AcceptConn(s.ctx, rw, req)
+	conn, err = AcceptConn(s, rw, req)
 	s.connMux.Lock()
 	s.conns[conn.id] = conn
 	s.connMux.Unlock()
@@ -96,4 +96,34 @@ func (s *HostServer)GetConnCount()(n int){
 	s.connMux.RLock()
 	defer s.connMux.RUnlock()
 	return len(s.conns)
+}
+
+func (s *HostServer)Broadcast(data Map)(n int, res <-chan error){
+	s.connMux.RLock()
+	defer s.connMux.RUnlock()
+	res0 := make(chan error, len(s.conns))
+	for _, c := range s.conns {
+		n++
+		go func(){
+			res0 <- c.send(data)
+		}()
+	}
+	res = res0
+	return
+}
+
+func (s *HostServer)broadcastExcept(data Map, except *Conn)(n int, res <-chan error){
+	s.connMux.RLock()
+	defer s.connMux.RUnlock()
+	res0 := make(chan error, len(s.conns))
+	for _, c := range s.conns {
+		if c != except {
+			n++
+			go func(){
+				res0 <- c.send(data)
+			}()
+		}
+	}
+	res = res0
+	return
 }

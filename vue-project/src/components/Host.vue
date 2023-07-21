@@ -12,11 +12,11 @@ class Context{
 		this.extNodes = ref([])
 		this._loadedPlugins = {}
 	}
-	loadPlugin(plugin, deviceObj){ // TODO: remove deviceObj arg
-		if(plugin.meta.id in this._loadedPlugins){
+	loadPlugin(plugin, hostObj){ // TODO: remove hostObj arg
+		if(!plugin.onHostLoad || plugin.meta.id in this._loadedPlugins){
 			return false
 		}
-		this._loadedPlugins[plugin.meta.id] = plugin.onHostLoad(this, deviceObj)
+		this._loadedPlugins[plugin.meta.id] = plugin.onHostLoad(this, hostObj)
 		return true
 	}
 	allocHTMLBlock(options){

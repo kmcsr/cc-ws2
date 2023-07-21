@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed, onBeforeMount, onUpdated } from 'vue'
+import { ref, computed, inject, onBeforeMount, onUpdated } from 'vue'
 import CloseSvg from 'vue-material-design-icons/Close.vue'
 import Terminal from './Terminal.vue'
 import HNode from './HNode.vue'
+import { insertBefore } from '../sort.js'
 
 const props = defineProps({
 	hostid: String,
@@ -17,6 +18,9 @@ function askWs(type, data){
 	})
 }
 
+const userinfo = inject('userinfo')
+
+const loadInfo = ref(null)
 const terms = ref([])
 const selectedTermIndex = ref(null)
 const selectedTermId = computed(() => selectedTermIndex.value === null ?null :terms.value[selectedTermIndex.value].id)
@@ -30,7 +34,7 @@ class Context{
 		this._loadedPlugins = {}
 	}
 	loadPlugin(plugin, deviceObj){ // TODO: remove deviceObj arg
-		if(plugin.meta.id in this._loadedPlugins){
+		if(!plugin.onDeviceLoad || plugin.meta.id in this._loadedPlugins){
 			return false
 		}
 		this._loadedPlugins[plugin.meta.id] = plugin.onDeviceLoad(this, deviceObj)
@@ -60,6 +64,9 @@ class Context{
 			}
 			return res.res
 		})
+	}
+	get user(){
+		return userinfo.value
 	}
 }
 
@@ -92,7 +99,17 @@ async function refreshTerms(){
 }
 
 onBeforeMount(async () => {
-	await Promise.all([refreshTerms()])
+	try {
+		loadInfo.value = 'Loading...'
+		await Promise.all([refreshTerms()])
+		loadInfo.value = null
+	}catch(err){
+		if(err.error){
+			loadInfo.value = 'Error: ' + err.error
+		}else{
+			loadInfo.value = 'Error: ' + String(err)
+		}
+	}
 })
 
 function switchTerm(i){
@@ -153,7 +170,7 @@ function onDeviceLeave(){
 //:export event
 function onTermOpen(data){
 	const [title, id] = data.args
-	terms.value.push({
+	insertBefore(terms.value, (t) => t.id <= id, {
 		id: id,
 		title: title,
 		running: true,
@@ -208,53 +225,58 @@ defineExpose({
 
 <template>
 	<div>
-		<h2>{{hostid}} <i style="font-size: 1rem; font-weight: 400;">ID: {{connid}}</i></h2>
-		<hr style="margin-bottom: 1rem;" />
-		<h3>Terminals</h3>
-		<hr/>
-		<nav class="term-nav-box">
-			<TransitionGroup tag="div" class="term-nav" name="term-nav">
-				<button v-for="(term, i) in terms" :key="term"
-					:class="selectedTermIndex === i ?'selected' :''"
-					@click.self="switchTerm(i)"
-					:title="term.title"
-				>
-					{{term.title}}
-					<button class="term-close-btn" @click="closeTerm(i)"
-						title="Close this terminal">
-						<CloseSvg size="1rem"/>
+		<div v-if="loadInfo" class="error-box">
+			<b>{{loadInfo}}</b>
+		</div>
+		<template v-else>
+			<h2>{{hostid}} <i style="font-size: 1rem; font-weight: 400;">ID: {{connid}}</i></h2>
+			<hr style="margin-bottom: 1rem;" />
+			<h3>Terminals</h3>
+			<hr/>
+			<nav class="term-nav-box">
+				<TransitionGroup tag="div" class="term-nav" name="term-nav">
+					<button v-for="(term, i) in terms" :key="term"
+						:class="selectedTermIndex === i ?'selected' :''"
+						@click.self="switchTerm(i)"
+						:title="term.title"
+					>
+						{{term.title}}
+						<button class="term-close-btn" @click="closeTerm(i)"
+							title="Close this terminal">
+							<CloseSvg size="1rem"/>
+						</button>
 					</button>
+				</TransitionGroup>
+				<button class="term-new-btn" @click="onNewTerm">
+					<b>New +</b>
 				</button>
-			</TransitionGroup>
-			<button class="term-new-btn" @click="onNewTerm">
-				<b>New +</b>
-			</button>
-		</nav>
-		<div class="term-box">
-			<div v-if="selectedTermIndex !== null">
-				<KeepAlive>
-					<Terminal :ref="(ref) => {
-							const term = terms[selectedTermIndex]
-							if(term){
-								term.ref = ref
-								if(ref){
-									ref.focus()
+			</nav>
+			<div class="term-box">
+				<div v-if="selectedTermIndex !== null">
+					<KeepAlive>
+						<Terminal :ref="(ref) => {
+								const term = terms[selectedTermIndex]
+								if(term){
+									term.ref = ref
+									if(ref){
+										ref.focus()
+									}
 								}
-							}
-						}"
-						:hostid="hostid" :connid="connid" :termid="selectedTermId" :key="terms[selectedTermIndex]"
-						v-on:ask="(...args) => emit('ask', ...args)"
-						v-on:fire-event="(...args) => emit('fire-event', ...args)"
-					/>
-				</KeepAlive>
+							}"
+							:hostid="hostid" :connid="connid" :termid="selectedTermId" :key="terms[selectedTermIndex]"
+							v-on:ask="(...args) => emit('ask', ...args)"
+							v-on:fire-event="(...args) => emit('fire-event', ...args)"
+						/>
+					</KeepAlive>
+				</div>
+				<div v-else>
+					<i>Please select or create a terminal</i>
+				</div>
 			</div>
-			<div v-else>
-				<i>Please select or create a terminal</i>
+			<div class="extention-box">
+				<HNode v-for="ele in context.extNodes" :node="ele.node" :styles="ele.styles"/>
 			</div>
-		</div>
-		<div class="extention-box">
-			<HNode v-for="ele in context.extNodes" :node="ele.node" :styles="ele.styles"/>
-		</div>
+		</template>
 	</div>
 </template>
 

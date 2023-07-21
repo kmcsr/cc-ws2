@@ -308,6 +308,32 @@ func (v *MySQLAPI)AuthDaemon(token string, server string)(ok bool){
 	return
 }
 
+func (v *MySQLAPI)GetUserInfo(token string)(info UserInfo, err error){
+	const queryCmd = "SELECT `username` FROM tokens" +
+		" WHERE `token`=?"
+
+	var ok bool
+	if token, ok = preProcessCliToken(token); !ok {
+		err = TokenNotExistsErr
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second * 5)
+	defer cancel()
+
+	var username sql.NullString
+	if err = v.DB.QueryRowContext(ctx, queryCmd, token).
+		Scan(&username); err != nil {
+		return
+	}
+	if username.Valid {
+		info.Username = username.String
+	}else{
+		info.Username = "cli-" + token[:4]
+	}
+	return
+}
+
 func (v *MySQLAPI)CheckRootToken(rtToken string)(ok bool){
 	const queryCmd = "SELECT `root` FROM tokens" +
 		" WHERE (`expiration` IS NULL OR CONVERT_TZ(`expiration`,@@session.time_zone,'+00:00')>=NOW())" +

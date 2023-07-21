@@ -35,6 +35,8 @@ func (e *TermNotFoundErr)Error()(string){
 type ConnEventListener = func(conn *Conn, event string, args List)
 
 type Conn struct {
+	host *HostServer
+
 	req    *http.Request
 	ws     *websocket.Conn
 	addr   string // as same as req.RemoteAddr
@@ -68,8 +70,9 @@ func readCCID(req *http.Request)(id int, err error){
 	return
 }
 
-func AcceptConn(ctx context.Context, rw http.ResponseWriter, req *http.Request)(c *Conn, err error){
+func AcceptConn(host *HostServer, rw http.ResponseWriter, req *http.Request)(c *Conn, err error){
 	c = &Conn{
+		host: host,
 		addr: req.RemoteAddr,
 		asking: make(map[int]chan<- any),
 		terms: make(map[int]*Term),
@@ -78,7 +81,7 @@ func AcceptConn(ctx context.Context, rw http.ResponseWriter, req *http.Request)(
 	if err != nil {
 		return
 	}
-	c.ctx, c.cancel = context.WithCancel(ctx)
+	c.ctx, c.cancel = context.WithCancel(host.ctx)
 	if c.id, err = readCCID(req); err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(rw, err.Error())
@@ -98,6 +101,10 @@ func AcceptConn(ctx context.Context, rw http.ResponseWriter, req *http.Request)(
 		}
 	}()
 	return
+}
+
+func (c *Conn)Host()(*HostServer){
+	return c.host
 }
 
 func (c *Conn)Addr()(string){
@@ -190,6 +197,9 @@ func (c *Conn)Handle(){
 		case "reply":
 			rid, _ := data.GetInt("id")
 			c.onReply(rid, data["data"])
+		case "broadcast":
+			tdata, _ := data.GetMap("data")
+			c.host.broadcastExcept(tdata, c)
 		case "event":
 			event, _ := data.GetString("event")
 			args, _ := data.GetList("args")

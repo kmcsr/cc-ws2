@@ -1,12 +1,17 @@
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount, onErrorCaptured } from 'vue'
+import { ref, watch, provide, onMounted, onBeforeUnmount, onErrorCaptured } from 'vue'
 import { onBeforeRouteUpdate, RouterView } from 'vue-router'
 import axios from 'axios'
 import Cube3D from '../components/Cube3D.vue'
+import { insertBefore } from '../sort.js'
+import { Lock } from '../lock.js'
 
 const props = defineProps({
 	token: String,
 })
+
+const userinfo = ref(null)
+provide('userinfo', userinfo)
 
 const loadError = ref(null)
 const plugins = ref({})
@@ -15,13 +20,295 @@ const hosts = ref([])
 const connected = ref(false)
 const routerRef = ref(null)
 
+onBeforeRouteUpdate(() => {
+	loadError.value = null
+})
+
+onErrorCaptured((err) => {
+	if(err.error){
+		loadError.value = err.error
+	}else{
+		loadError.value = String(err)
+	}
+})
+
+async function connectWs(token){
+	const ws = new WebSocket(`${window.location.origin.replace('http', 'ws')}/wscli?authTk=${encodeURIComponent(token)}`)
+	await new Promise((resolve, reject) => {
+		ws.addEventListener('open', (event) => {
+			resolve(event)
+			ws.removeEventListener('error', reject)
+		})
+		ws.addEventListener('error', reject)
+	})
+	var askIncreasement = 0
+	var asking = {}
+	ws.send_native = ws.send
+	ws.send = function(msg){
+		return ws.send_native(JSON.stringify(msg))
+	}
+	ws.askSync = function(type, data, resolve){
+		let id = askIncreasement
+		while(asking[id = (id + 1) & 0xffffffff]);
+		asking[id] = resolve
+		askIncreasement = id
+		ws.send({
+			type: type,
+			id: id,
+			data: data,
+		})
+	}
+	ws.ask = function(type, data){
+		return new Promise((resolve) => {
+			ws.askSync(type, data, resolve)
+		})
+	}
+	ws.fireTermEvent = function(host, conn, term, event, ...args){
+		ws.send({
+			type: 'fire_event',
+			host: host,
+			conn: conn,
+			term: term,
+			event: event,
+			args: args,
+		})
+	}
+	ws.addEventListener('message', (event0) => {
+		const event = JSON.parse(event0.data)
+		const data = event.data
+		switch(event.type){
+		case 'ping': {
+			// TODO
+			break
+		}
+		case 'reply': {
+			const resolve = asking[event.id]
+			if(resolve){
+				resolve(data)
+			}else{
+				console.warn('Unexcept reply id', event.id)
+			}
+			break
+		}
+		}
+	})
+	ws.addEventListener('close', (event) => {
+		console.error('websocket closed:', event)
+	})
+	ws.addEventListener('error', (event) => {
+		console.error('websocket on error:', event)
+	})
+	return ws
+}
+
+var wsconn = null
+
+function initWs(ws){
+	function _getConnObj(hostid, data){
+		const host = hosts.value.find((h) => h.id === hostid)
+		if(host){
+			const conn = host.conns.find((c) => c.id === data.conn)
+			return conn
+		}
+		return null
+	}
+	ws.addEventListener('message', (event0) => {
+		const event = JSON.parse(event0.data)
+		const data = event.data
+		switch(event.type){
+		case 'device_join': {
+			const hostid = event.host
+			var host = hosts.value.find((h) => h.id === hostid)
+			if(host){
+				const conn = host.conns.find((c) => c.id === data.conn)
+				if(conn){
+					console.warn('Device id already exists:', conn, 'ignore:', data)
+				}else{
+					const id = data.conn
+					insertBefore(host.conns, (c) => c.id <= id, {
+						host: host,
+						id: id,
+						addr: data.addr,
+						device: data.device,
+						label: data.label,
+					})
+				}
+			}else{
+				host = {
+					id: hostid,
+				}
+				host.conns = [{
+					id: data.conn,
+					addr: data.addr,
+					device: data.device,
+					label: data.label,
+					host: host,
+				}]
+				hosts.value.push(host)
+			}
+			break
+		}
+		case 'device_leave': {
+			const hostid = event.host
+			const host = hosts.value.find((h) => h.id === hostid)
+			if(host){
+				const i = host.conns.findIndex((c) => c.id === data.conn)
+				if(i >= 0){
+					const conn = host.conns[i]
+					if(conn.ref){
+						conn.ref.onDeviceLeave()
+					}
+					host.conns.splice(i, 1)
+				}
+			}
+			break
+		}
+		case 'device_event': {
+			const obj = _getConnObj(event.host, data)
+			if(obj && obj.ref){
+				obj.ref.onEvent(data)
+			}
+			break
+		}
+		case 'term.open': {
+			const obj = _getConnObj(event.host, data)
+			if(obj && obj.ref){
+				obj.ref.onTermOpen(data)
+			}
+			break
+		}
+		case 'term.close': {
+			const obj = _getConnObj(event.host, data)
+			if(obj && obj.ref){
+				obj.ref.onTermClose(data)
+			}
+			break
+		}
+		case 'term.oper': {
+			const obj = _getConnObj(event.host, data)
+			if(obj && obj.ref){
+				obj.ref.onTermOper(data)
+			}
+			break
+		}
+		case 'custom_event': {
+			const eventTyp = event.event
+			onCustomEvent(eventTyp, data)
+			break
+		}
+		}
+	})
+	return ws
+}
+
+const wsconnLock = new Lock()
+
+async function reconnect(){
+	await wsconnLock.lock()
+	try{
+		connected.value = false
+		if(wsconn){
+			wsconn.close()
+			wsconn = null
+		}
+
+		const token = props.token
+
+		try{
+			wsconn = initWs(await connectWs(token))
+			let res = await wsconn.ask('user_info')
+			if(res.status !== 'ok'){
+				throw res
+			}
+			userinfo.value = res.data
+			connected.value = true
+			console.log('Connect success!')
+		}catch(e){
+			if(wsconn){
+				wsconn.close()
+				wsconn = null
+			}
+			console.error('Cannot connect websocket:', e)
+			await alert('Cannot connect to the websocket point')
+			return
+		}
+		const res = await wsconn.ask('list_hosts')
+		if(res.status !== 'ok'){
+			hosts.value = []
+			console.error('Cannot get hosts:', res)
+		}else{
+			const hsts = res.data || []
+			hsts.forEach((host) => {
+				host.conns.sort((a, b) => a.id - b.id).forEach((conn) => {
+					conn.host = host
+				})
+			})
+			hosts.value = hsts
+		}
+	}finally{
+		wsconnLock.unlock()
+	}
+}
+
+async function provideWebsocket(){
+	await wsconnLock.waitForUnlock()
+	if(!wsconn || wsconn.readyState !== WebSocket.OPEN){
+		console.warn('Websocket is inactive, reconnecting...')
+		await reconnect()
+	}
+	return wsconn
+}
+
+async function onWsAsk(...args){
+	await provideWebsocket()
+	wsconn.askSync(...args)
+}
+
+async function onFireEvent(...args){
+	await provideWebsocket()
+	wsconn.fireTermEvent(...args)
+}
+
+function onCustomEvent(event, data){
+	let i = event.indexOf(':')
+	if(i > 0){
+		const pluginid = event.substring(0, i)
+		event = event.substring(i + 1)
+		const plugin = plugins.value[pluginid]
+		if(plugin && plugin.onevent){
+			plugin.onevent(event, data)
+		}
+	}
+}
+
+class PluginAPI{
+	constructor(plugin){
+		this.plugin = plugin
+		this._pluginId = plugin.meta.id
+	}
+	get pluginId(){
+		return this._pluginId
+	}
+	get user(){
+		return userinfo.value
+	}
+	async broadcast(event, data){
+		await provideWebsocket()
+		return wsconn.send({
+			type: 'broadcast_cli',
+			event: this.pluginId + ':' + event,
+			data: data,
+		})
+	}
+}
+
 async function loadPlugin(pluginid, version){
 	if(version === 'outside'){
 		console.log(`loading outside plugin at ${pluginid}`)
 		return loadPluginByUrl(pluginid)
 	}
 	console.log(`loading plugin ${pluginid} v${version}`)
-	const urlpath = `/api/web_plugin/${pluginid}/${version}`
+	const urlpath = `/api/web_plugin/${pluginid}@${version}`
 	return loadPluginByUrl(urlpath)
 }
 
@@ -48,21 +335,23 @@ async function loadPluginByUrl(urlpath){
 	}
 	plugins.value[pid] = plugin
 
+	if(plugin.onload){
+		plugin.onload(new PluginAPI(plugin))
+	}
+
 	const ref = routerRef.value
 	if(ref){
 		const props = ref.props || ref._.props
-		let { hostid, connid } = props
-		let ctx = ref.getContext()
-		let host = hosts.value.find((h) => h.id === hostid)
+		const { hostid, connid } = props
+		const ctx = ref.getContext()
+		const host = hosts.value.find((h) => h.id === hostid)
 		if(connid){
-			let conn = host.conns.find((c) => c.id === connid)
-			forEachPlugin((plugin) => {
+			const conn = host.conns.find((c) => c.id === connid)
+			if(conn){
 				ctx.loadPlugin(plugin, conn)
-			})
+			}
 		}else{
-			forEachPlugin((plugin) => {
-				ctx.loadPlugin(plugin, host)
-			})
+			ctx.loadPlugin(plugin, host)
 		}
 	}
 	return plugin
@@ -74,25 +363,16 @@ async function loadPlugins(){
 			'Authorization': props.token,
 		}
 	})).data.data
-	return await Promise.all(pluginList.map(
-		(plugin) => loadPlugin(plugin.id, plugin.version)))
+	for(const plugin of pluginList){ // have to keep the plugin order
+		await loadPlugin(plugin.id, plugin.version).catch((err) => {
+			console.error(`Couldn't load plugin ${plugin.id}:`, err)
+		})
+	}
 }
 
 function forEachPlugin(cb){
 	return Object.values(plugins.value).forEach(cb)
 }
-
-onBeforeRouteUpdate(() => {
-	loadError.value = null
-})
-
-onErrorCaptured((err) => {
-	if(err.error){
-		loadError.value = err.error
-	}else{
-		loadError.value = String(err)
-	}
-})
 
 var lastFocus = ''
 
@@ -131,196 +411,6 @@ watch(routerRef, (ref) => {
 		})
 	}
 })
-
-async function connectWs(token){
-	const ws = new WebSocket(`${window.location.origin.replace('http', 'ws')}/wscli?authTk=${encodeURIComponent(token)}`)
-	await new Promise((resolve, reject) => {
-		ws.addEventListener('open', (event) => {
-			resolve(event)
-			ws.removeEventListener('error', reject)
-		})
-		ws.addEventListener('error', reject)
-	})
-	var askIncreasement = 0
-	var asking = {}
-	ws.askSync = function(type, data, resolve){
-		let id = askIncreasement
-		while(asking[id = (id + 1) & 0xffffffff]);
-		asking[id] = resolve
-		askIncreasement = id
-		ws.send(JSON.stringify({
-			type: type,
-			id: id,
-			data: data,
-		}))
-	}
-	ws.ask = function(type, data){
-		return new Promise((resolve) => {
-			ws.askSync(type, data, resolve)
-		})
-	}
-	ws.fireTermEvent = function(host, conn, term, event, ...args){
-		ws.send(JSON.stringify({
-			type: 'fire_event',
-			host: host,
-			conn: conn,
-			term: term,
-			event: event,
-			args: args,
-		}))
-	}
-	function _getConnObj(data){
-		const host = hosts.value.find((h) => h.id === data.host)
-		if(host){
-			const conn = host.conns.find((c) => c.id === data.conn)
-			return conn
-		}
-		return null
-	}
-	ws.addEventListener('message', (event0) => {
-		const event = JSON.parse(event0.data)
-		const data = event.data
-		switch(event.type){
-		case 'reply': {
-			const resolve = asking[event.id]
-			if(resolve){
-				resolve(data)
-			}else{
-				console.warn('Unexcept reply id', event.id)
-			}
-			break
-		}
-		case 'device_join': {
-			var host = hosts.value.find((h) => h.id === data.host)
-			if(host){
-				const conn = host.conns.find((c) => c.id === data.conn)
-				if(conn){
-					console.warn('Device id already exists:', conn, 'ignore:', data)
-				}else{
-					host.conns.push({
-						id: data.conn,
-						addr: data.addr,
-						device: data.device,
-						label: data.label,
-					host: host,
-					})
-				}
-			}else{
-				host = {
-					id: data.host,
-				}
-				host.conns = [{
-					id: data.conn,
-					addr: data.addr,
-					device: data.device,
-					label: data.label,
-					host: host,
-				}]
-				hosts.value.push(host)
-			}
-			break
-		}
-		case 'device_leave': {
-			const host = hosts.value.find((h) => h.id === data.host)
-			if(host){
-				const i = host.conns.findIndex((c) => c.id === data.conn)
-				if(i >= 0){
-					const conn = host.conns[i]
-					if(conn.ref){
-						conn.ref.onDeviceLeave()
-					}
-					host.conns.splice(i, 1)
-				}
-			}
-			break
-		}
-		case 'device_event': {
-			const obj = _getConnObj(data)
-			if(obj && obj.ref){
-				obj.ref.onEvent(data)
-			}
-			break
-		}
-		case 'term.open': {
-			const obj = _getConnObj(data)
-			if(obj && obj.ref){
-				obj.ref.onTermOpen(data)
-			}
-			break
-		}
-		case 'term.close': {
-			const obj = _getConnObj(data)
-			if(obj && obj.ref){
-				obj.ref.onTermClose(data)
-			}
-			break
-		}
-		case 'term.oper': {
-			const obj = _getConnObj(data)
-			if(obj && obj.ref){
-				obj.ref.onTermOper(data)
-			}
-			break
-		}
-		default:
-			console.debug('not handled event:', event)
-		}
-	})
-	ws.addEventListener('error', (event) => {
-		console.error('websocket on error:', event)
-	})
-	return ws
-}
-
-var wsconn = null
-
-function onWsAsk(...args){
-	if(wsconn && wsconn.readyState === WebSocket.OPEN){
-		wsconn.askSync(...args)
-	}else{
-		console.debug('Sending message to inactive websocket')
-	}
-}
-
-function onFireEvent(...args){
-	if(wsconn && wsconn.readyState === WebSocket.OPEN){
-		wsconn.fireTermEvent(...args)
-	}else{
-		console.debug('Sending message to inactive websocket')
-	}
-}
-
-async function reconnect(){
-	if(wsconn){
-		wsconn.close()
-		wsconn = null
-	}
-
-	const token = props.token
-
-	try{
-		wsconn = await connectWs(token)
-		connected.value = true
-		console.log('Connect success!')
-	}catch(e){
-		connected.value = false
-		console.error('Cannot connect websocket:', e)
-		await alert('Cannot connect to the websocket point')
-		return
-	}
-	const res = await wsconn.ask('list_hosts')
-	if(res.status !== 'ok'){
-		console.error('Cannot get hosts:', res)
-	}else{
-		const hsts = res.data || []
-		hsts.forEach((host) => {
-			host.conns.forEach((conn) => {
-				conn.host = host
-			})
-		})
-		hosts.value = hsts
-	}
-}
 
 await reconnect()
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"time"
 
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -16,9 +17,11 @@ import (
 type HandlerI interface {
 	DataAPI
 	FsAPI
+
 	Context()(context.Context)
 	GetHost(id string)(*HostServer)
 	GetHosts()([]*HostServer)
+	BroadcastToClients(event string, data any, except *CliConn)
 }
 
 // This connection is only used when outside of CC
@@ -50,6 +53,18 @@ func AcceptCliConn(handler HandlerI, token string, rw http.ResponseWriter, req *
 		return
 	}
 	c.ctx, c.cancel = context.WithCancel(handler.Context())
+	go func(){
+		for {
+			select {
+			case <-time.After(10 * time.Second):
+				c.send(Map{
+					"type": "ping",
+				})
+			case <-c.ctx.Done():
+				return
+			}
+		}
+	}()
 	return
 }
 
@@ -120,6 +135,34 @@ func (c *CliConn)Handle(){
 		case "reply":
 			rid, _ := data.GetInt("id")
 			c.onReply(rid, data["data"])
+		case "user_info":
+			id, _ := data.GetInt("id")
+			var data UserInfo
+			data, err := c.handler.GetUserInfo(c.token)
+			if err != nil {
+				c.Reply(id, Map{
+					"status": "error",
+					"error": err.Error(),
+				})
+				return
+			}
+			c.Reply(id, Map{
+				"status": "ok",
+				"data": data,
+			})
+		case "broadcast_cli":
+			event, _ := data.GetString("event")
+			data := data.Get("data")
+			c.handler.BroadcastToClients(event, data, c)
+		case "broadcast":
+			hid, _ := data.GetString("host")
+			if !c.handler.CheckPerm(c.token, hid) {
+				break
+			}
+			tdata, _ := data.GetMap("data")
+			if host := c.handler.GetHost(hid); host != nil {
+				host.Broadcast(tdata)
+			}
 		case "fire_event":
 			hid, _ := data.GetString("host")
 			cid, _ := data.GetInt("conn")

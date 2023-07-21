@@ -8,6 +8,8 @@ CREATE TABLE tokens (
 	PRIMARY KEY (`token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
+ALTER TABLE tokens ADD `username`   VARCHAR(64) DEFAULT NULL;
+
 CREATE TABLE servers (
 	`id` VARCHAR(64) NOT NULL,
 	PRIMARY KEY (`id`)

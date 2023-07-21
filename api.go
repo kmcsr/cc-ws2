@@ -24,6 +24,10 @@ var (
 	ErrIsDir = errors.New("Plugin not exists")
 )
 
+type UserInfo struct {
+	Username string `json:"username"`
+}
+
 type Token struct {
 	Token string `json:"token"`
 	Root  bool   `json:"root"`
@@ -63,6 +67,7 @@ type DataAPI interface {
 	ListDaemonTokens()(tokens []DaemonToken, err error)
 	AuthCli(token string)(ok bool)
 	AuthDaemon(token string, host string)(ok bool)
+	GetUserInfo(token string)(info UserInfo, err error)
 	CheckRootToken(token string)(ok bool)
 	SetRoot(token string, value bool)(err error)
 	CreateServer(id string)(err error)
