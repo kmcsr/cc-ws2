@@ -92,16 +92,11 @@ async function connectWs(token){
 		}
 		}
 	})
-	ws.addEventListener('close', (event) => {
-		console.error('websocket closed:', event)
-	})
-	ws.addEventListener('error', (event) => {
-		console.error('websocket on error:', event)
-	})
 	return ws
 }
 
 var wsconn = null
+const wsconnLock = new Lock()
 
 function initWs(ws){
 	function _getConnObj(hostid, data){
@@ -112,6 +107,24 @@ function initWs(ws){
 		}
 		return null
 	}
+	var lastWaitRatio = 1
+	async function tryReconnect(){
+		await Promise.all([sleep(1000 * lastWaitRatio), wsconnLock.lock()])
+		if(!wsconn || wsconn.readyState !== WebSocket.OPEN){
+			lastWaitRatio = Math.min(lastWaitRatio * 2, 5 * 60) // up to 5 mins
+			wsconnLock.unlock()
+			if(await reconnect()){
+				lastWaitRatio = 1
+			}else{
+				tryReconnect()
+			}
+		}
+	}
+	ws.addEventListener('close', (event) => {
+		console.error('websocket closed:', event)
+		alertHint('Websocket closed', {style: 'error'})
+		tryReconnect()
+	})
 	ws.addEventListener('message', (event0) => {
 		const event = JSON.parse(event0.data)
 		const data = event.data
@@ -201,8 +214,6 @@ function initWs(ws){
 	return ws
 }
 
-const wsconnLock = new Lock()
-
 async function reconnect(){
 	await wsconnLock.lock()
 	try{
@@ -214,6 +225,7 @@ async function reconnect(){
 
 		const token = props.token
 
+		alertHint('Connecting websocket...', {style: 'warn', timeout: 60})
 		try{
 			wsconn = initWs(await connectWs(token))
 			let res = await wsconn.ask('user_info')
@@ -222,15 +234,16 @@ async function reconnect(){
 			}
 			userinfo.value = res.data
 			connected.value = true
-			console.log('Connect success!')
+			console.log('Connection successed!')
+			alertHint('Connection successed!', {style: 'info'})
 		}catch(e){
 			if(wsconn){
 				wsconn.close()
 				wsconn = null
 			}
 			console.error('Cannot connect websocket:', e)
-			await alert('Cannot connect to the websocket point')
-			return
+			alertHint('Cannot connect to the websocket point', {style: 'error'})
+			return false
 		}
 		const res = await wsconn.ask('list_hosts')
 		if(res.status !== 'ok'){
@@ -245,6 +258,7 @@ async function reconnect(){
 			})
 			hosts.value = hsts
 		}
+		return true
 	}finally{
 		wsconnLock.unlock()
 	}

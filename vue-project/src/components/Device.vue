@@ -126,7 +126,7 @@ function closeTerm(i){
 	if(selectedTermIndex.value >= i && --selectedTermIndex.value < 0){
 		selectedTermIndex.value = terms.value.length > 0 ?0 :null
 	}
-	emit('fire-event', props.hostid, props.connid, termid, 'terminate')
+	emit('fire-event', props.hostid, props.connid, termid, 'kill')
 }
 
 async function onNewTerm(){

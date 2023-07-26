@@ -6,6 +6,63 @@ const props = defineProps({
 	secrets: Array, // []String
 })
 
+var hintTimer = null
+const hintText = ref(null)
+const hintStyle = ref({})
+const defaultHintStyle = {}
+const hintStylePresets = {
+	'error': {
+		'--hint-before-content': '"ERROR: "',
+		'background-color': '#e20d16',
+		'color': '#ffffff',
+	},
+	'warn': {
+		'--hint-before-content': '"WARN: "',
+		'background-color': '#fff000',
+		'color': '#860f0f',
+	},
+	'info': {
+		'--hint-before-content': '"INFO: "',
+		'background-color': '#3333ff',
+		'color': '#ffffff',
+	}
+}
+
+function alertHint(msg, options){
+	if(hintTimer){
+		clearTimeout(hintTimer)
+		hintText.value = null
+		hintTimer = setTimeout(() => {
+			hintTimer = null
+			alertHint(msg, options)
+		}, 300)
+		return
+	}
+	msg = typeof msg === 'undefined' ?'' :String(msg)
+	hintText.value = msg
+	hintStyle.value = defaultHintStyle
+	let timeout = 2000
+	if(options){
+		let style = options.style
+		if(style){
+			if(typeof style === 'string'){
+				style = hintStylePresets[style] || {}
+			}
+			hintStyle.value = { ...defaultHintStyle, ...style }
+		}
+		if(options.timeout){
+			let tout = Number.parseInt(options.timeout)
+			if(tout >= 0){
+				timeout = tout
+			}
+		}
+	}
+	hintTimer = setTimeout(() => {
+		hintTimer = null
+		hintText.value = null
+	}, timeout)
+}
+
 var closeCb = null
 
 const ALERT_ID = 1
@@ -123,12 +180,18 @@ defineExpose({
 	alert,
 	confirm,
 	prompt,
+	alertHint,
 })
 
 </script>
 
 <template>
 	<Teleport to="body">
+		<Transition name="hint">
+			<div v-if="hintText" class="hint-box">
+				<div class="hint-content" :style="hintStyle">{{hintText}}</div>
+			</div>
+		</Transition>
 		<Transition name="alert">
 			<div v-if="show" class="background">
 				<dialog class="box">
@@ -179,6 +242,39 @@ defineExpose({
 </template>
 
 <style scoped>
+
+.hint-enter-active,
+.hint-leave-active {
+  transition: all 0.5s ease;
+}
+
+.hint-enter-from,
+.hint-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -1rem) !important;
+}
+
+.hint-box {
+	position: fixed;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	background: #eee;
+	border-radius: 0.2rem;
+	box-shadow: #0004 0 0 0.1rem;
+	font-family: monospace;
+	font-size: 0.9rem;
+	font-weight: 400;
+	overflow: hidden;
+}
+
+.hint-content {
+	padding: 0.5rem 0.7rem;
+}
+
+.hint-content::before {
+	content: var(--hint-before-content, "");
+}
 
 .alert-enter-active,
 .alert-leave-active {

@@ -20,11 +20,17 @@ async function relog(){ // TODO: better prompt
 	token.value = tk
 }
 
+window.sleep = function(td){
+	return new Promise((re) => setTimeout(re, td))
+}
+
 onMounted(async () => {
-	({alert: window.alert, confirm: window.confirm, prompt: window.prompt} = alerter.value)
+	({alert: window.alert, confirm: window.confirm, prompt: window.prompt, alertHint: window.alertHint} = alerter.value)
 	try{
-		if(!token.value){
+		if(token.value){
 			console.debug('Using saved token')
+			VueCookie.set('_token', token.value, '30d')
+		}else{
 			await relog()
 		}
 	}finally{
