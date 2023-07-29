@@ -1,0 +1,13 @@
+
+syntax = "proto3";
+
+package plugin;
+option go_package = "github.com/kmcsr/cc-ws2/plugin/protos";
+
+message Empty {}
+
+// will use "encoding/gob" package to encode/decode data
+message Any {
+	string type = 1;
+	bytes value = 2;
+}

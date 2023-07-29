@@ -1,0 +1,49 @@
+
+syntax = "proto3";
+
+package plugin;
+option go_package = "github.com/kmcsr/cc-ws2/plugin/protos";
+
+import "types.proto";
+
+// go:plugin type=plugin version=1
+service Hook {
+	rpc Metadata(Empty) returns (HookMetadata) {}
+	rpc OnLoad(HookLoadEvent) returns (Empty) {}
+	rpc OnUnload(HookUnloadEvent) returns (Empty) {}
+	rpc OnDeviceJoin(DeviceJoinEvent) returns (Empty) {}
+	rpc OnDeviceLeave(DeviceLeaveEvent) returns (Empty) {}
+	rpc OnDeviceEvent(DeviceEvent) returns (Empty) {}
+}
+
+message HookMetadata {
+	string id = 1;
+	string version = 2;
+}
+
+message HookLoadEvent {
+	bool reload = 1;
+}
+
+message HookUnloadEvent {
+}
+
+message Device {
+	string host = 1;
+	int64  id = 2;
+	string type = 3;
+}
+
+message DeviceJoinEvent {
+	Device device = 1;
+}
+
+message DeviceLeaveEvent {
+	Device device = 1;
+}
+
+message DeviceEvent {
+	Device device = 1;
+	string event = 2;
+	repeated Any args = 3;
+}
