@@ -11,6 +11,7 @@ package protos
 import (
 	context "context"
 	wasm "github.com/knqyf263/go-plugin/wasm"
+	_ "unsafe"
 )
 
 const HookPluginAPIVersion = 1
@@ -168,4 +169,59 @@ func _hook_on_device_event(ptr, size uint32) uint64 {
 	}
 	ptr, size = wasm.ByteToPtr(b)
 	return (uint64(ptr) << uint64(32)) | uint64(size)
+}
+
+//export hook_on_device_custom_event
+func _hook_on_device_custom_event(ptr, size uint32) uint64 {
+	b := wasm.PtrToByte(ptr, size)
+	req := new(DeviceCustomEvent)
+	if err := req.UnmarshalVT(b); err != nil {
+		return 0
+	}
+	response, err := hook.OnDeviceCustomEvent(context.Background(), req)
+	if err != nil {
+		ptr, size = wasm.ByteToPtr([]byte(err.Error()))
+		return (uint64(ptr) << uint64(32)) | uint64(size) |
+			// Indicate that this is the error string by setting the 32-th bit, assuming that
+			// no data exceeds 31-bit size (2 GiB).
+			(1 << 31)
+	}
+
+	b, err = response.MarshalVT()
+	if err != nil {
+		return 0
+	}
+	ptr, size = wasm.ByteToPtr(b)
+	return (uint64(ptr) << uint64(32)) | uint64(size)
+}
+
+type hookAPI struct{}
+
+func NewHookAPI() HookAPI {
+	return hookAPI{}
+}
+
+//go:wasm-module env
+//export fire_event
+//go:linkname _fire_event
+func _fire_event(ptr uint32, size uint32) uint64
+
+func (h hookAPI) FireEvent(ctx context.Context, request *FireEventReq) (*Empty, error) {
+	buf, err := request.MarshalVT()
+	if err != nil {
+		return nil, err
+	}
+	ptr, size := wasm.ByteToPtr(buf)
+	ptrSize := _fire_event(ptr, size)
+	wasm.FreePtr(ptr)
+
+	ptr = uint32(ptrSize >> 32)
+	size = uint32(ptrSize)
+	buf = wasm.PtrToByte(ptr, size)
+
+	response := new(Empty)
+	if err = response.UnmarshalVT(buf); err != nil {
+		return nil, err
+	}
+	return response, nil
 }

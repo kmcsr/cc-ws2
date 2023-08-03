@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+
+	"github.com/kmcsr/cc-ws2/plugin"
 )
 
 type Handler struct {
@@ -20,6 +22,8 @@ type Handler struct {
 
 	cliMux  sync.RWMutex
 	clients map[*CliConn]struct{}
+
+	hookManager *plugin.HookManager
 }
 
 var _ HandlerI = (*Handler)(nil)
@@ -32,23 +36,48 @@ func NewHandler(dtapi DataAPI, fsapi FsAPI)(h *Handler){
 		clients: make(map[*CliConn]struct{}),
 	}
 	h.ctx, h.cancel = context.WithCancel(context.Background())
+	var err error
+	if h.hookManager, err = plugin.NewHookManager(h.ctx, h.newHookAPI); err != nil {
+		loger.Panic(err) // TODO: maybe return err?
+	}
 	return 
 }
 
-func (h *Handler)NewServeMux()(mux *http.ServeMux){
-	mux = http.NewServeMux()
-	mux.Handle("/main/", webAssetsHandler)
-	mux.Handle("/api/", http.StripPrefix("/api", h.newApiMux()))
-	mux.HandleFunc("/wscli", h.serveWscli)
-	mux.HandleFunc("/wsd", h.serveWsd)
-	mux.HandleFunc("/", func(rw http.ResponseWriter, req *http.Request){
-		http.NotFound(rw, req)
-	})
+type hookAPI struct {
+	h *Handler
+	hook string
+}
+
+var _ plugin.HookAPI = (*hookAPI)(nil)
+
+func (api *hookAPI)FireEvent(ctx context.Context, hostid string, deviceid int64, data map[string]any)(err error){
+	host := api.h.GetHost(hostid)
+	if host == nil {
+		return fmt.Errorf("Host %q is not exists", hostid)
+	}
+	conn := host.GetConn(deviceid)
+	if conn == nil {
+		return fmt.Errorf("Device %d is not connected", deviceid)
+	}
+	if err = conn.send((Map)(data)); err != nil {
+		return
+	}
 	return
+}
+
+func (h *Handler)newHookAPI(hookid string)(api plugin.HookAPI, err error){
+	return &hookAPI{
+		h: h,
+		hook: hookid,
+	}, nil
 }
 
 func (h *Handler)Context()(context.Context){
 	return h.ctx
+}
+
+func (h *Handler)HookManager()(*plugin.HookManager){
+	return h.hookManager
 }
 
 func (h *Handler)CreateHost(id string)(s *HostServer){
@@ -136,12 +165,27 @@ func (h *Handler)onWsdEvent(host *HostServer, conn *Conn, event string, args Lis
 		return
 	}
 	hostid := host.Id()
-	if event[0] == '#' {
+	if event[0] == '#' { // internal events
 		event = event[1:]
 		h.BroadcastToClientsWithHost(hostid, event, Map{
 			"conn": conn.Id(),
 			"args": args,
 		})
+		return
+	}
+	if event[0] == '$' { // event that need to be send to hooks ($<hookid>:<event_type>)
+		var hookid string
+		hookid, event = splitByte(event[1:], ':')
+		if hook := h.hookManager.Get(hookid); hook != nil {
+			hook.OnDeviceCustomEvent(h.ctx, &plugin.DeviceCustomEvent{
+				Device: &plugin.Device{
+					Host: hostid,
+					Id: conn.Id(),
+				},
+				Event: event,
+				Args: args,
+			})
+		}
 		return
 	}
 	h.BroadcastToClientsWithHost(hostid, "device_event", Map{
@@ -220,4 +264,16 @@ func (h *Handler)serveWscli(rw http.ResponseWriter, req *http.Request){
 		delete(h.clients, conn)
 	}()
 	conn.Handle()
+}
+
+func (h *Handler)NewServeMux()(mux *http.ServeMux){
+	mux = http.NewServeMux()
+	mux.Handle("/main/", webAssetsHandler)
+	mux.Handle("/api/", http.StripPrefix("/api", h.newApiMux()))
+	mux.HandleFunc("/wscli", h.serveWscli)
+	mux.HandleFunc("/wsd", h.serveWsd)
+	mux.HandleFunc("/", func(rw http.ResponseWriter, req *http.Request){
+		http.NotFound(rw, req)
+	})
+	return
 }

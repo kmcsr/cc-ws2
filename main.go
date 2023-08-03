@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -28,7 +29,7 @@ var defaultConfig = &Config{
 var config *Config = loadConfig()
 
 func loadConfig()(cfg *Config){
-	const configPath = "/etc/cc_ws2/config.json"
+	var configPath = filepath.Join(DataDir, "config.json")
 	var data []byte
 	var err error
 	if data, err = os.ReadFile(configPath); err != nil {
@@ -43,6 +44,7 @@ func loadConfig()(cfg *Config){
 }
 
 func main(){
+	hooksDir := filepath.Join(DataDir, "hooks")
 
 	username := os.Getenv("DB_USER")
 	passwd := os.Getenv("DB_PASSWD")
@@ -59,6 +61,18 @@ func main(){
 
 	handler := NewHandler(dtapi, fsapi)
 
+	{
+		loger.Info("Loading hook plugins...")
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second * 30)
+		errs := handler.HookManager().LoadFromDir(ctx, hooksDir)
+		cancel()
+		if len(errs) != 0 {
+			for _, e := range errs {
+				loger.Error(e)
+			}
+		}
+	}
+
 	server := &http.Server{
 		Addr: net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
 		Handler: logMiddleWare(handler.NewServeMux()),
@@ -66,7 +80,7 @@ func main(){
 
 	done := make(chan struct{}, 0)
 	sigch := make(chan os.Signal, 1)
-	signal.Notify(sigch, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM)
+	signal.Notify(sigch, syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGHUP)
 
 	go func(){
 		defer close(done)
@@ -76,12 +90,31 @@ func main(){
 		}
 	}()
 
-	select {
-	case <-sigch:
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second * 3)
-		server.Shutdown(ctx)
-		cancel()
-	case <-done:
+	for {
+		select {
+		case sig := <-sigch:
+			if sig == syscall.SIGHUP { // reload
+				loger.Warnf("Reload signal received [%s]", sig.String())
+				loger.Info("Reloading hook plugins...")
+				{
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second * 10)
+					errs := handler.HookManager().ReloadFromDir(ctx, hooksDir)
+					cancel()
+					if len(errs) != 0 {
+						for _, e := range errs {
+							loger.Error(e)
+						}
+					}
+				}
+			}else{
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second * 3)
+				server.Shutdown(ctx)
+				cancel()
+				return
+			}
+		case <-done:
+			return
+		}
 	}
 }
 

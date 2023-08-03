@@ -19,6 +19,33 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type FireEventReq struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Target *Device         `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	Data   map[string]*Any `protobuf:"bytes,2,rep,name=data,proto3" json:"data,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (x *FireEventReq) ProtoReflect() protoreflect.Message {
+	panic(`not implemented`)
+}
+
+func (x *FireEventReq) GetTarget() *Device {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *FireEventReq) GetData() map[string]*Any {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 type HookMetadata struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -183,6 +210,46 @@ func (x *DeviceEvent) GetArgs() []*Any {
 	return nil
 }
 
+type DeviceCustomEvent struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Device *Device `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	Event  string  `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
+	Args   []*Any  `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`
+}
+
+func (x *DeviceCustomEvent) ProtoReflect() protoreflect.Message {
+	panic(`not implemented`)
+}
+
+func (x *DeviceCustomEvent) GetDevice() *Device {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+func (x *DeviceCustomEvent) GetEvent() string {
+	if x != nil {
+		return x.Event
+	}
+	return ""
+}
+
+func (x *DeviceCustomEvent) GetArgs() []*Any {
+	if x != nil {
+		return x.Args
+	}
+	return nil
+}
+
+// go:plugin type=host version=1
+type HookAPI interface {
+	FireEvent(context.Context, *FireEventReq) (*Empty, error)
+}
+
 // go:plugin type=plugin version=1
 type Hook interface {
 	Metadata(context.Context, *Empty) (*HookMetadata, error)
@@ -191,4 +258,5 @@ type Hook interface {
 	OnDeviceJoin(context.Context, *DeviceJoinEvent) (*Empty, error)
 	OnDeviceLeave(context.Context, *DeviceLeaveEvent) (*Empty, error)
 	OnDeviceEvent(context.Context, *DeviceEvent) (*Empty, error)
+	OnDeviceCustomEvent(context.Context, *DeviceCustomEvent) (*Empty, error)
 }

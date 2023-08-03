@@ -15,7 +15,7 @@ type HostServer struct {
 	cancel context.CancelFunc
 
 	connMux sync.RWMutex
-	conns   map[int]*Conn
+	conns   map[int64]*Conn
 }
 
 func NewHostServer(ctx context.Context, id string)(s *HostServer){
@@ -24,7 +24,7 @@ func NewHostServer(ctx context.Context, id string)(s *HostServer){
 		ctx: ctx0,
 		cancel: cancel,
 		id: id,
-		conns: make(map[int]*Conn),
+		conns: make(map[int64]*Conn),
 	}
 }
 
@@ -43,7 +43,7 @@ func (s *HostServer)Destroy(){
 }
 
 func (s *HostServer)AcceptConn(rw http.ResponseWriter, req *http.Request)(conn *Conn, err error){
-	var ccId int
+	var ccId int64
 	if ccId, err = readCCID(req); err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(rw, err.Error())
@@ -76,7 +76,7 @@ func (s *HostServer)AcceptConn(rw http.ResponseWriter, req *http.Request)(conn *
 	return
 }
 
-func (s *HostServer)GetConn(id int)(*Conn){
+func (s *HostServer)GetConn(id int64)(*Conn){
 	s.connMux.RLock()
 	defer s.connMux.RUnlock()
 	return s.conns[id]

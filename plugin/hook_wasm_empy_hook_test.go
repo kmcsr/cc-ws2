@@ -1,11 +1,11 @@
 
 //go:build tinygo.wasm
-package register_test
+package plugin_test
 
 import (
 	"context"
 
-	. "github.com/kmcsr/cc-ws2/plugin/register"
+	. "github.com/kmcsr/cc-ws2/plugin"
 )
 
 type EmptyHookImpl struct {

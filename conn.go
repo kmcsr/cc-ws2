@@ -40,7 +40,7 @@ type Conn struct {
 	req    *http.Request
 	ws     *websocket.Conn
 	addr   string // as same as req.RemoteAddr
-	id     int
+	id     int64
 	device string // The device's type, example are [turtle pocket computer]
 	label  string
 
@@ -58,15 +58,17 @@ type Conn struct {
 	TerminateHandler func(c *Conn)(ok bool)
 }
 
-func readCCID(req *http.Request)(id int, err error){
+func readCCID(req *http.Request)(id int64, err error){
 	sCcId := req.Header.Get("X-CC-ID")
-	id, err = strconv.Atoi(sCcId)
+	var id0 int
+	id0, err = strconv.Atoi(sCcId)
 	if err != nil {
 		return -1, fmt.Errorf("The value of X-CC-ID (%q) is not a vaild integer", sCcId)
 	}
-	if id < 0 {
-		return -1, fmt.Errorf("X-CC-ID must be a non-negative integer, but got %d", id)
+	if id0 < 0 {
+		return -1, fmt.Errorf("X-CC-ID must be a non-negative integer, but got %d", id0)
 	}
+	id = (int64)(id0)
 	return
 }
 
@@ -111,7 +113,7 @@ func (c *Conn)Addr()(string){
 	return c.addr
 }
 
-func (c *Conn)Id()(int){
+func (c *Conn)Id()(int64){
 	return c.id
 }
 

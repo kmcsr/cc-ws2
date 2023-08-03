@@ -26,4 +26,4 @@ FROM alpine:latest
 COPY --from=BUILD "/go/bin/application" "/application"
 
 ENTRYPOINT ["/application"]
-CMD [":80"]
+CMD []

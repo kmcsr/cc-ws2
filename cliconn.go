@@ -165,7 +165,7 @@ func (c *CliConn)Handle(){
 			}
 		case "fire_event":
 			hid, _ := data.GetString("host")
-			cid, _ := data.GetInt("conn")
+			cid, _ := data.GetInt64("conn")
 			tid, _ := data.GetInt("term")
 			event, _ := data.GetString("event")
 			args, _ := data.GetList("args")
@@ -181,7 +181,7 @@ func (c *CliConn)Handle(){
 			id, _ := data.GetInt("id")
 			nhosts := c.handler.GetHosts()
 			type connMeta struct {
-				Id     int    `json:"id"`
+				Id     int64  `json:"id"`
 				Addr   string `json:"addr"`
 				Device string `json:"device"`
 				Label  string `json:"label"`
@@ -238,7 +238,7 @@ func (c *CliConn)Handle(){
 				break
 			}
 			type connMeta struct {
-				Id     int    `json:"id"`
+				Id     int64  `json:"id"`
 				Addr   string `json:"addr"`
 				Device string `json:"device"`
 				Label  string `json:"label"`
@@ -266,7 +266,7 @@ func (c *CliConn)Handle(){
 			id, _ := data.GetInt("id")
 			dt, _ := data.GetMap("data")
 			hostid, _ := dt.GetString("host")
-			connid, _ := dt.GetInt("conn")
+			connid, _ := dt.GetInt64("conn")
 			host := c.checkAndGetHost(id, hostid)
 			if host == nil {
 				break
@@ -288,7 +288,7 @@ func (c *CliConn)Handle(){
 			id, _ := data.GetInt("id")
 			dt, _ := data.GetMap("data")
 			hostid, _ := dt.GetString("host")
-			connid, _ := dt.GetInt("conn")
+			connid, _ := dt.GetInt64("conn")
 			termid, _ := dt.GetInt("term")
 			host := c.checkAndGetHost(id, hostid)
 			if host == nil {
@@ -330,7 +330,7 @@ func (c *CliConn)Handle(){
 			id, _ := data.GetInt("id")
 			dt, _ := data.GetMap("data")
 			hostid, _ := dt.GetString("host")
-			connid, _ := dt.GetInt("conn")
+			connid, _ := dt.GetInt64("conn")
 			program, _ := dt.GetString("prog")
 			args, _ := dt.GetList("args")
 			host := c.checkAndGetHost(id, hostid)
@@ -360,7 +360,7 @@ func (c *CliConn)Handle(){
 			id, _ := data.GetInt("id")
 			dt, _ := data.GetMap("data")
 			hostid, _ := dt.GetString("host")
-			connid, _ := dt.GetInt("conn")
+			connid, _ := dt.GetInt64("conn")
 			codes, _ := dt.GetString("codes")
 			host := c.checkAndGetHost(id, hostid)
 			if host == nil {

@@ -6,6 +6,16 @@ option go_package = "github.com/kmcsr/cc-ws2/plugin/protos";
 
 import "types.proto";
 
+// go:plugin type=host version=1
+service HookAPI {
+	rpc FireEvent(FireEventReq) returns (Empty) {}
+}
+
+message FireEventReq {
+	Device target = 1;
+	map<string, Any> data = 2;
+}
+
 // go:plugin type=plugin version=1
 service Hook {
 	rpc Metadata(Empty) returns (HookMetadata) {}
@@ -14,6 +24,7 @@ service Hook {
 	rpc OnDeviceJoin(DeviceJoinEvent) returns (Empty) {}
 	rpc OnDeviceLeave(DeviceLeaveEvent) returns (Empty) {}
 	rpc OnDeviceEvent(DeviceEvent) returns (Empty) {}
+	rpc OnDeviceCustomEvent(DeviceCustomEvent) returns (Empty) {}
 }
 
 message HookMetadata {
@@ -43,6 +54,12 @@ message DeviceLeaveEvent {
 }
 
 message DeviceEvent {
+	Device device = 1;
+	string event = 2;
+	repeated Any args = 3;
+}
+
+message DeviceCustomEvent {
 	Device device = 1;
 	string event = 2;
 	repeated Any args = 3;

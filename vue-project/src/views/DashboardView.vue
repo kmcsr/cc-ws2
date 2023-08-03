@@ -98,6 +98,24 @@ async function connectWs(token){
 var wsconn = null
 const wsconnLock = new Lock()
 
+var lastWaitRatio = 1
+async function tryReconnect(immediately){
+	if(immediately){
+		lastWaitRatio = 1
+	}
+	await Promise.all([sleep(1000 * lastWaitRatio), wsconnLock.lock()])
+	if(wsconn && wsconn.readyState === WebSocket.OPEN){
+		return
+	}
+	wsconnLock.unlock()
+	if(await reconnect()){
+		lastWaitRatio = 1
+		return true
+	}
+	lastWaitRatio = Math.min(lastWaitRatio * 2, 5 * 60) // up to 5 mins
+	return tryReconnect()
+}
+
 function initWs(ws){
 	function _getConnObj(hostid, data){
 		const host = hosts.value.find((h) => h.id === hostid)
@@ -106,19 +124,6 @@ function initWs(ws){
 			return conn
 		}
 		return null
-	}
-	var lastWaitRatio = 1
-	async function tryReconnect(){
-		await Promise.all([sleep(1000 * lastWaitRatio), wsconnLock.lock()])
-		if(!wsconn || wsconn.readyState !== WebSocket.OPEN){
-			lastWaitRatio = Math.min(lastWaitRatio * 2, 5 * 60) // up to 5 mins
-			wsconnLock.unlock()
-			if(await reconnect()){
-				lastWaitRatio = 1
-			}else{
-				tryReconnect()
-			}
-		}
 	}
 	ws.addEventListener('close', (event) => {
 		console.error('websocket closed:', event)
@@ -268,7 +273,7 @@ async function provideWebsocket(){
 	await wsconnLock.waitForUnlock()
 	if(!wsconn || wsconn.readyState !== WebSocket.OPEN){
 		console.warn('Websocket is inactive, reconnecting...')
-		await reconnect()
+		await tryReconnect(true)
 	}
 	return wsconn
 }

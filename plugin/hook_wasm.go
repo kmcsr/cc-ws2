@@ -1,6 +1,6 @@
 
 //go:build tinygo.wasm
-package register
+package plugin
 
 import (
 	"context"
@@ -9,28 +9,13 @@ import (
 	"github.com/kmcsr/cc-ws2/plugin/protos"
 )
 
-type (
-	Empty = protos.Empty
-	HookMetadata = protos.HookMetadata
-	HookLoadEvent = protos.HookLoadEvent
-	HookUnloadEvent = protos.HookUnloadEvent
-
-	Device = protos.Device
-	DeviceJoinEvent = protos.DeviceJoinEvent
-	DeviceLeaveEvent = protos.DeviceLeaveEvent
-	DeviceEvent struct {
-		Device *Device
-		Event  string
-		Args   []any
-	}
-)
-
 type HookPlugin interface {
 	OnLoad(context.Context, *HookLoadEvent)(error)
 	OnUnload(context.Context, *HookUnloadEvent)
 	OnDeviceJoin(context.Context, *DeviceJoinEvent)
 	OnDeviceLeave(context.Context, *DeviceLeaveEvent)
 	OnDeviceEvent(context.Context, *DeviceEvent)
+	OnDeviceCustomEvent(context.Context, *DeviceCustomEvent)
 }
 
 type EmptyHook struct{}
@@ -38,6 +23,7 @@ type EmptyHook struct{}
 func (EmptyHook)OnDeviceJoin(context.Context, *DeviceJoinEvent){}
 func (EmptyHook)OnDeviceLeave(context.Context, *DeviceLeaveEvent){}
 func (EmptyHook)OnDeviceEvent(context.Context, *DeviceEvent){}
+func (EmptyHook)OnDeviceCustomEvent(context.Context, *DeviceCustomEvent){}
 
 type hookWrapper struct {
 	meta *HookMetadata
@@ -87,5 +73,21 @@ func (w hookWrapper)OnDeviceEvent(ctx context.Context, v *protos.DeviceEvent)(re
 		Args: args,
 	}
 	w.p.OnDeviceEvent(ctx, v0)
+	return
+}
+
+func (w hookWrapper)OnDeviceCustomEvent(ctx context.Context, v *protos.DeviceCustomEvent)(res *Empty, err error){
+	args := make([]any, len(v.Args))
+	for i, v := range v.Args {
+		if args[i], err = v.Unwrap(); err != nil {
+			return nil, fmt.Errorf("Error when parsing arg %d: %w", i, err)
+		}
+	}
+	var v0 = &DeviceCustomEvent{
+		Device: v.Device,
+		Event: v.Event,
+		Args: args,
+	}
+	w.p.OnDeviceCustomEvent(ctx, v0)
 	return
 }

@@ -30,6 +30,21 @@ func (m Map)GetInt(k string)(v int, ok bool){
 	return
 }
 
+func (m Map)GetInt64(k string)(v int64, ok bool){
+	if v, ok = m[k].(int64); !ok {
+		var (
+			v0 int
+			v1 float64
+		)
+		if v0, ok = m[k].(int); ok {
+			v = (int64)(v0)
+		}else if v1, ok = m[k].(float64); ok {
+			v = (int64)(v1)
+		}
+	}
+	return
+}
+
 func (m Map)GetFloat(k string)(v float64, ok bool){
 	v, ok = m[k].(float64)
 	return
